@@ -1,0 +1,23 @@
+{
+  "name": "stokmaterial-id",
+  "version": "1.0.0",
+  "description": "Sistem POS & Manajemen Stok Multi-Satuan Toko Bangunan (React + Vite + Express + Sequelize + PostgreSQL)",
+  "scripts": {
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "seed": "npm --prefix server run seed",
+    "test:server": "npm --prefix server test",
+    "build:client": "npm --prefix client run build"
+  },
+  "keywords": [
+    "pos",
+    "toko-bangunan",
+    "react",
+    "express",
+    "postgres",
+    "multi-satuan",
+    "kasbon"
+  ],
+  "author": "StokMaterial.id",
+  "license": "ISC"
+}
