@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import api from '../services/api.js';
-import { useCartStore } from '../store/useCartStore.js';
-import { formatRupiah } from '../utils/formatters.js';
-import MaterialImage from '../components/MaterialImage.jsx';
-import CreditHealthBar from '../components/CreditHealthBar.jsx';
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate, useOutletContext } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import api from "../services/api.js";
+import { useCartStore } from "../store/useCartStore.js";
+import { formatRupiah } from "../utils/formatters.js";
+import MaterialImage from "../components/MaterialImage.jsx";
+import CreditHealthBar from "../components/CreditHealthBar.jsx";
 import {
   Search,
   ShoppingCart,
@@ -17,14 +18,26 @@ import {
   List,
   ArrowRight,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 
 export default function POSPage({ onProceedToPayment, globalSearch }) {
-  const [localSearch, setLocalSearch] = useState('');
+  const navigate = useNavigate();
+  const outlet = useOutletContext() || {};
+  const effectiveGlobalSearch =
+    globalSearch !== undefined ? globalSearch : outlet.globalSearch;
+  const handleProceed = useCallback(() => {
+    if (onProceedToPayment) {
+      onProceedToPayment();
+    } else {
+      navigate("/checkout");
+    }
+  }, [onProceedToPayment, navigate]);
+
+  const [localSearch, setLocalSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedBrand, setSelectedBrand] = useState('all');
-  const [sortBy, setSortBy] = useState('popular');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+  const [selectedBrand, setSelectedBrand] = useState("all");
+  const [sortBy, setSortBy] = useState("popular");
+  const [viewMode, setViewMode] = useState("grid"); // 'grid' | 'list'
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
   const {
@@ -41,49 +54,49 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
     getItemCount,
   } = useCartStore();
 
-  const searchQuery = globalSearch || localSearch;
+  const searchQuery = effectiveGlobalSearch || localSearch;
 
   // 1. Fetch Categories
   const { data: categories = [] } = useQuery({
-    queryKey: ['categories'],
+    queryKey: ["categories"],
     queryFn: async () => {
-      const res = await api.get('/categories');
+      const res = await api.get("/categories");
       return res.data.data;
     },
   });
 
   // 2. Fetch Products
   const { data: products = [], isLoading: isProductsLoading } = useQuery({
-    queryKey: ['products', searchQuery, selectedCategory],
+    queryKey: ["products", searchQuery, selectedCategory],
     queryFn: async () => {
       const params = {};
       if (searchQuery) params.search = searchQuery;
       if (selectedCategory) params.categoryId = selectedCategory;
-      const res = await api.get('/products', { params });
+      const res = await api.get("/products", { params });
       return res.data.data;
     },
   });
 
   // 3. Fetch Customers for Customer selector
   const { data: customers = [] } = useQuery({
-    queryKey: ['customers'],
+    queryKey: ["customers"],
     queryFn: async () => {
-      const res = await api.get('/customers');
+      const res = await api.get("/customers");
       return res.data.data;
     },
   });
 
-  // Keyboard shortcut F2 -> Lanjut ke pembayaran
+  // Keyboard shortcut F10 -> Lanjut ke pembayaran
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'F2' && items.length > 0) {
+      if ((e.key === "F10" || e.key === "F2") && items.length > 0) {
         e.preventDefault();
-        onProceedToPayment();
+        handleProceed();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [items.length, onProceedToPayment]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [items.length, handleProceed]);
 
   const subtotal = getSubtotal();
   const discountAmount = Math.round(subtotal * (discount / 100));
@@ -91,28 +104,70 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
   const total = subtotal - discountAmount + taxAmount;
 
   // Filtered & sorted products
-  const displayProducts = [...products].sort((a, b) => {
-    if (sortBy === 'price-low') {
-      const priceA = a.units?.[0]?.sellPrice || 0;
-      const priceB = b.units?.[0]?.sellPrice || 0;
-      return priceA - priceB;
-    }
-    if (sortBy === 'price-high') {
-      const priceA = a.units?.[0]?.sellPrice || 0;
-      const priceB = b.units?.[0]?.sellPrice || 0;
-      return priceB - priceA;
-    }
-    return 0; // Default popular / order from server
-  });
+  const displayProducts = [...products]
+    .filter((prod) => {
+      if (selectedBrand === "all") return true;
+      const name = (prod.name || "").toLowerCase();
+      const sku = (prod.sku || "").toLowerCase();
+      if (selectedBrand === "indocement") {
+        return (
+          name.includes("tiga roda") ||
+          name.includes("indocement") ||
+          sku.includes("tgr")
+        );
+      }
+      if (selectedBrand === "semen-gresik") {
+        return name.includes("gresik") || sku.includes("grs");
+      }
+      if (selectedBrand === "rucika") {
+        return (
+          name.includes("rucika") ||
+          name.includes("wavin") ||
+          sku.includes("wvn")
+        );
+      }
+      if (selectedBrand === "dulux") {
+        return (
+          name.includes("dulux") ||
+          name.includes("catylac") ||
+          sku.includes("dlx")
+        );
+      }
+      if (selectedBrand === "hebel") {
+        return name.includes("hebel") || sku.includes("hbl");
+      }
+      if (selectedBrand === "sni") {
+        return name.includes("sni") || sku.includes("bsi");
+      }
+      return (
+        name.includes(selectedBrand.toLowerCase()) ||
+        sku.includes(selectedBrand.toLowerCase())
+      );
+    })
+    .sort((a, b) => {
+      if (sortBy === "price-low") {
+        const priceA = a.units?.[0]?.sellPrice || 0;
+        const priceB = b.units?.[0]?.sellPrice || 0;
+        return priceA - priceB;
+      }
+      if (sortBy === "price-high") {
+        const priceA = a.units?.[0]?.sellPrice || 0;
+        const priceB = b.units?.[0]?.sellPrice || 0;
+        return priceB - priceA;
+      }
+      return 0; // Default popular / order from server
+    });
 
   // Reusable Cart Content renderer for both desktop column & mobile bottom sheet
   const renderCartContent = (isMobile = false) => (
-    <div className="flex flex-col h-full bg-white select-none">
+    <div className="flex flex-col h-full w-full bg-white select-none">
       {/* Cart Header */}
       <div className="p-4 border-b border-[#DEDCCF] flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ShoppingCart className="w-5 h-5 text-[#234536]" />
-          <h2 className="font-extrabold text-sm text-[#252922]">Keranjang Belanja</h2>
+          <h2 className="font-extrabold text-sm text-[#252922]">
+            Keranjang Belanja
+          </h2>
           <span className="w-5 h-5 rounded-full bg-[#234536] text-white text-xs font-bold flex items-center justify-center">
             {items.length}
           </span>
@@ -147,9 +202,13 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
             <div className="w-12 h-12 rounded-full bg-[#F7F4ED] flex items-center justify-center text-xl">
               🛒
             </div>
-            <div className="text-xs font-bold text-[#252922]">Keranjang Masih Kosong</div>
+            <div className="text-xs font-bold text-[#252922]">
+              Keranjang Masih Kosong
+            </div>
             <div className="text-[11px] text-[#625D53] max-w-xs">
-              Klik tombol <span className="font-bold text-[#234536]">+ Tambah</span> pada katalog material untuk memasukkan barang.
+              Klik tombol{" "}
+              <span className="font-bold text-[#234536]">+ Tambah</span> pada
+              katalog material untuk memasukkan barang.
             </div>
           </div>
         ) : (
@@ -160,7 +219,11 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
             >
               {/* Thumb + Info */}
               <div className="flex items-center gap-2.5 min-w-0">
-                <MaterialImage name={item.productName} sku={item.sku} className="w-10 h-10 shrink-0" />
+                <MaterialImage
+                  name={item.productName}
+                  sku={item.sku}
+                  className="w-10 h-10 shrink-0"
+                />
                 <div className="min-w-0">
                   <div className="font-extrabold text-xs text-[#252922] truncate">
                     {item.productName}
@@ -184,7 +247,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
               <div className="flex flex-col items-end gap-1 shrink-0">
                 <div className="flex items-center gap-1.5">
                   <button
-                    onClick={() => updateQty(item.productId, item.unitId, item.qty - 1)}
+                    onClick={() =>
+                      updateQty(item.productId, item.unitId, item.qty - 1)
+                    }
                     className="w-6 h-6 rounded bg-white hover:bg-slate-100 border border-[#DEDCCF] flex items-center justify-center text-[#252922] font-bold"
                   >
                     <Minus className="w-3 h-3" />
@@ -193,7 +258,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                     {item.qty}
                   </span>
                   <button
-                    onClick={() => updateQty(item.productId, item.unitId, item.qty + 1)}
+                    onClick={() =>
+                      updateQty(item.productId, item.unitId, item.qty + 1)
+                    }
                     className="w-6 h-6 rounded bg-white hover:bg-slate-100 border border-[#DEDCCF] flex items-center justify-center text-[#252922] font-bold"
                   >
                     <Plus className="w-3 h-3" />
@@ -225,9 +292,11 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
 
         <div className="flex gap-2">
           <select
-            value={selectedCustomer?.id || ''}
+            value={selectedCustomer?.id || ""}
             onChange={(e) => {
-              const c = customers.find((cust) => cust.id === parseInt(e.target.value, 10));
+              const c = customers.find(
+                (cust) => cust.id === parseInt(e.target.value, 10),
+              );
               setCustomer(c || null);
             }}
             className="flex-1 p-2 bg-white border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]"
@@ -241,9 +310,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
           </select>
         </div>
 
-        {selectedCustomer && (
-          <CreditHealthBar customer={selectedCustomer} />
-        )}
+        {selectedCustomer && <CreditHealthBar customer={selectedCustomer} />}
       </div>
 
       {/* Calculation Summary & Payment CTA */}
@@ -258,7 +325,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
 
           <div className="flex justify-between text-[#625D53]">
             <span>Subtotal</span>
-            <span className="font-bold text-[#252922]">{formatRupiah(subtotal)}</span>
+            <span className="font-bold text-[#252922]">
+              {formatRupiah(subtotal)}
+            </span>
           </div>
 
           <div className="flex items-center justify-between text-[#625D53]">
@@ -281,7 +350,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
 
           <div className="flex justify-between text-[#625D53]">
             <span>Pajak (PPN 11%)</span>
-            <span className="font-bold text-[#252922]">{formatRupiah(taxAmount)}</span>
+            <span className="font-bold text-[#252922]">
+              {formatRupiah(taxAmount)}
+            </span>
           </div>
 
           <div className="pt-2 border-t border-[#DEDCCF] flex items-baseline justify-between">
@@ -298,13 +369,13 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
         <button
           onClick={() => {
             if (isMobile) setIsMobileCartOpen(false);
-            onProceedToPayment();
+            handleProceed();
           }}
           disabled={items.length === 0}
           className="w-full py-3.5 px-4 rounded-control bg-[#234536] hover:bg-[#1c372b] active:scale-[0.99] text-white font-extrabold text-sm shadow-sm flex items-center justify-center gap-2 transition disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <CreditCard className="w-4 h-4" />
-          <span>Lanjut ke Pembayaran (F2)</span>
+          <span>Lanjut ke Pembayaran (F10)</span>
           <ArrowRight className="w-4 h-4 ml-1" />
         </button>
       </div>
@@ -312,7 +383,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
   );
 
   return (
-    <div className="relative flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden bg-[#F7F4ED]">
+    <div className="relative flex flex-col lg:flex-row h-full w-full overflow-hidden bg-[#F7F4ED]">
       {/* ============================================================ */}
       {/* MAIN COLUMN: KATALOG & GRID PRODUK (Full width on mobile/tab) */}
       {/* ============================================================ */}
@@ -329,7 +400,8 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                 Kasir Penjualan
               </h1>
               <p className="text-xs text-[#625D53]">
-                Pilih barang material, tambahkan ke keranjang, lalu lanjut ke pembayaran.
+                Pilih barang material, tambahkan ke keranjang, lalu lanjut ke
+                pembayaran.
               </p>
             </div>
           </div>
@@ -340,8 +412,8 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
               onClick={() => setSelectedCategory(null)}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-control text-xs font-bold whitespace-nowrap transition ${
                 selectedCategory === null
-                  ? 'bg-[#234536] text-white shadow-xs'
-                  : 'bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] border border-[#DEDCCF]'
+                  ? "bg-[#234536] text-white shadow-xs"
+                  : "bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] border border-[#DEDCCF]"
               }`}
             >
               <span>🛒</span>
@@ -353,14 +425,16 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
               return (
                 <button
                   key={cat.id}
-                  onClick={() => setSelectedCategory(isSelected ? null : cat.id)}
+                  onClick={() =>
+                    setSelectedCategory(isSelected ? null : cat.id)
+                  }
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-control text-xs font-bold whitespace-nowrap transition ${
                     isSelected
-                      ? 'bg-[#234536] text-white shadow-xs'
-                      : 'bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] border border-[#DEDCCF]'
+                      ? "bg-[#234536] text-white shadow-xs"
+                      : "bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] border border-[#DEDCCF]"
                   }`}
                 >
-                  <span>{cat.icon || '🧱'}</span>
+                  <span>{cat.icon || "🧱"}</span>
                   <span>{cat.name}</span>
                 </button>
               );
@@ -389,8 +463,10 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                 <option value="all">Semua Merek</option>
                 <option value="indocement">Tiga Roda / Indocement</option>
                 <option value="semen-gresik">Semen Gresik</option>
-                <option value="rucika">Rucika</option>
-                <option value="dulux">Dulux</option>
+                <option value="rucika">Rucika / Wavin</option>
+                <option value="dulux">Dulux / Catylac</option>
+                <option value="hebel">Bata Hebel</option>
+                <option value="sni">Besi SNI</option>
               </select>
 
               <select
@@ -405,14 +481,14 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
 
               <div className="flex items-center border border-[#DEDCCF] rounded-control overflow-hidden bg-[#F7F4ED]">
                 <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-1.5 ${viewMode === 'grid' ? 'bg-[#234536] text-white' : 'text-[#625D53] hover:text-[#252922]'}`}
+                  onClick={() => setViewMode("grid")}
+                  className={`p-1.5 ${viewMode === "grid" ? "bg-[#234536] text-white" : "text-[#625D53] hover:text-[#252922]"}`}
                 >
                   <LayoutGrid className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-1.5 ${viewMode === 'list' ? 'bg-[#234536] text-white' : 'text-[#625D53] hover:text-[#252922]'}`}
+                  onClick={() => setViewMode("list")}
+                  className={`p-1.5 ${viewMode === "list" ? "bg-[#234536] text-white" : "text-[#625D53] hover:text-[#252922]"}`}
                 >
                   <List className="w-3.5 h-3.5" />
                 </button>
@@ -430,23 +506,156 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
           ) : displayProducts.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-card border border-[#DEDCCF] p-6 max-w-sm mx-auto">
               <div className="text-3xl mb-2">🔍</div>
-              <div className="font-bold text-sm text-[#252922]">Barang Tidak Ditemukan</div>
+              <div className="font-bold text-sm text-[#252922]">
+                Barang Tidak Ditemukan
+              </div>
               <div className="text-xs text-[#625D53] mt-1">
                 Tidak ada produk dengan kata kunci "{searchQuery}".
               </div>
             </div>
+          ) : viewMode === "list" ? (
+            /* Table View Mode */
+            <div className="bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
+                    <tr>
+                      <th className="py-3 px-3.5">PRODUK & SKU</th>
+                      <th className="py-3 px-3">KATEGORI</th>
+                      <th className="py-3 px-3 text-center">STOK</th>
+                      <th className="py-3 px-3 text-right">HARGA / SATUAN</th>
+                      <th className="py-3 px-3">OPSI SATUAN</th>
+                      <th className="py-3 px-3 text-center w-36">AKSI</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#DEDCCF]/70">
+                    {displayProducts.map((prod) => {
+                      const units = prod.units || [];
+                      const selectedUnit =
+                        units[units.length - 1] ||
+                        units[0] || {
+                          id: 1,
+                          unitName: prod.baseUnit || "Pcs",
+                          sellPrice: 0,
+                          conversionFactor: 1,
+                        };
+                      const isOutOfStock = prod.currentStockBase <= 0;
+                      const isLow = prod.currentStockBase <= (prod.minStock || 20);
+                      const cartItem = items.find(
+                        (i) =>
+                          i.productId === prod.id && i.unitId === selectedUnit.id,
+                      );
+
+                      return (
+                        <tr
+                          key={prod.id}
+                          className="hover:bg-[#F7F4ED]/50 transition group cursor-pointer"
+                          onClick={() => {
+                            if (!isOutOfStock) addItem(prod, selectedUnit);
+                          }}
+                        >
+                          <td className="py-2.5 px-3.5">
+                            <div className="flex items-center gap-2.5">
+                              <MaterialImage
+                                name={prod.name}
+                                sku={prod.sku}
+                                className="w-10 h-10 shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="font-extrabold text-xs text-[#252922] truncate">
+                                  {prod.name}
+                                </div>
+                                <div className="text-[10px] text-[#8C877D] font-mono">
+                                  {prod.sku}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 font-medium text-[#625D53]">
+                            {prod.category?.name || "Material Bangunan"}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-black">
+                            <span
+                              className={
+                                isOutOfStock
+                                  ? "text-[#C62828]"
+                                  : isLow
+                                  ? "text-[#D97706]"
+                                  : "text-[#16845B]"
+                              }
+                            >
+                              {prod.humanReadableStock ||
+                                `${prod.currentStockBase} ${prod.baseUnit}`}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="font-black text-[#252922]">
+                              {formatRupiah(selectedUnit.sellPrice)}
+                            </div>
+                            <span className="text-[10px] text-[#8C877D]">
+                              per {selectedUnit.unitName}
+                            </span>
+                          </td>
+                          <td
+                            className="py-2.5 px-3"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {units.length > 1 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {units.map((u) => (
+                                  <button
+                                    key={u.id}
+                                    onClick={() => addItem(prod, u)}
+                                    className="px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[10px] font-bold text-[#16845B] transition"
+                                    title={`Beli 1 ${u.unitName} (${formatRupiah(u.sellPrice)})`}
+                                  >
+                                    + {u.unitName}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-[#8C877D]">-</span>
+                            )}
+                          </td>
+                          <td
+                            className="py-2.5 px-3 text-center"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => addItem(prod, selectedUnit)}
+                              disabled={isOutOfStock}
+                              className="w-full py-1.5 px-2.5 rounded-control bg-[#234536] hover:bg-[#1c372b] active:scale-[0.98] text-white text-xs font-extrabold flex items-center justify-center gap-1 transition disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>
+                                {cartItem ? `+ Lagi (${cartItem.qty})` : "Tambah"}
+                              </span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
+            /* Grid View Mode */
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4">
               {displayProducts.map((prod) => {
                 const units = prod.units || [];
-                const selectedUnit = units[units.length - 1] || units[0] || {
-                  id: 1,
-                  unitName: prod.baseUnit || 'Pcs',
-                  sellPrice: 0,
-                  conversionFactor: 1,
-                };
+                const selectedUnit = units[units.length - 1] ||
+                  units[0] || {
+                    id: 1,
+                    unitName: prod.baseUnit || "Pcs",
+                    sellPrice: 0,
+                    conversionFactor: 1,
+                  };
 
-                const isPopular = prod.id <= 5 || prod.name.includes('Semen') || prod.name.includes('Hebel');
+                const isPopular =
+                  prod.id <= 5 ||
+                  prod.name.includes("Semen") ||
+                  prod.name.includes("Hebel");
                 const isOutOfStock = prod.currentStockBase <= 0;
 
                 return (
@@ -485,7 +694,11 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                         {isOutOfStock ? (
                           <span className="text-[#C62828]">Stok Habis</span>
                         ) : (
-                          <span>Stok: {prod.humanReadableStock || `${prod.currentStockBase} ${prod.baseUnit}`}</span>
+                          <span>
+                            Stok:{" "}
+                            {prod.humanReadableStock ||
+                              `${prod.currentStockBase} ${prod.baseUnit}`}
+                          </span>
                         )}
                       </div>
 
@@ -540,7 +753,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
       {/* ============================================================ */}
       {/* DESKTOP RIGHT COLUMN: KERANJANG BELANJA (Visible on lg+)     */}
       {/* ============================================================ */}
-      <div className="hidden lg:flex w-full lg:w-[400px] xl:w-[440px] border-l border-[#DEDCCF] h-full shrink-0">
+      <div className="hidden lg:flex flex-col w-[380px] xl:w-[420px] 2xl:w-[440px] border-l border-[#DEDCCF] h-full shrink-0 bg-white">
         {renderCartContent(false)}
       </div>
 
@@ -562,7 +775,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
           </div>
           <div className="text-left">
             <div className="text-[10px] text-white/80 font-bold uppercase tracking-wider leading-none">
-              {items.length > 0 ? `${items.length} Item di Keranjang` : 'Keranjang Belanja'}
+              {items.length > 0
+                ? `${items.length} Item di Keranjang`
+                : "Keranjang Belanja"}
             </div>
             <div className="text-xs sm:text-sm font-black text-white leading-tight mt-0.5">
               {formatRupiah(total)}

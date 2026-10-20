@@ -12,10 +12,9 @@ import {
   Search,
   RotateCcw,
   Edit2,
-  MoreHorizontal,
+  Trash2,
   X,
   CheckCircle2,
-  History,
   Ban,
 } from 'lucide-react';
 
@@ -26,6 +25,7 @@ export default function SupplierPage() {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [drawerTab, setDrawerTab] = useState('info'); // 'info' | 'contact' | 'address' | 'history'
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [deleteConfirmSupplier, setDeleteConfirmSupplier] = useState(null);
 
   // New Supplier form state
   const [supName, setSupName] = useState('');
@@ -228,6 +228,15 @@ export default function SupplierPage() {
     alert(`Supplier baru ${supName} berhasil didaftarkan!`);
   };
 
+  const handleConfirmDeleteSupplier = () => {
+    if (!deleteConfirmSupplier) return;
+    setSuppliers((prev) => prev.filter((x) => x.id !== deleteConfirmSupplier.id));
+    if (selectedSupplier?.id === deleteConfirmSupplier.id) {
+      setSelectedSupplier(null);
+    }
+    setDeleteConfirmSupplier(null);
+  };
+
   // Filtered suppliers
   const filtered = suppliers.filter((s) => {
     if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !s.city.toLowerCase().includes(search.toLowerCase())) {
@@ -385,10 +394,8 @@ export default function SupplierPage() {
         </div>
       </div>
 
-      {/* Main Table & Selected Drawer */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Table Area */}
-        <div className={`${selectedSupplier ? 'lg:col-span-8' : 'lg:col-span-12'} bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden`}>
+      {/* Main Table Area (Full Width) */}
+      <div className="w-full bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
@@ -442,15 +449,17 @@ export default function SupplierPage() {
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => setSelectedSupplier(s)}
-                            className="p-1 hover:bg-slate-200 rounded text-[#234536] transition"
+                            title="Edit Supplier"
+                            className="p-1.5 hover:bg-slate-200 rounded text-[#234536] transition"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => setSelectedSupplier(s)}
-                            className="p-1 hover:bg-slate-200 rounded text-[#8C877D] transition"
+                            onClick={() => setDeleteConfirmSupplier(s)}
+                            title="Hapus Supplier"
+                            className="p-1.5 hover:bg-red-50 rounded text-[#C62828] transition"
                           >
-                            <MoreHorizontal className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -474,138 +483,183 @@ export default function SupplierPage() {
           </div>
         </div>
 
-        {/* Selected Supplier Detail Drawer */}
-        {selectedSupplier && (
-          <div className="lg:col-span-4 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-red-100 border border-red-300 flex items-center justify-center text-xl shrink-0">
-                  🏢
-                </div>
-                <div>
-                  <h3 className="font-black text-sm text-[#252922] leading-tight">
-                    {selectedSupplier.name}
-                  </h3>
-                  <div className="text-[11px] text-[#8C877D] font-mono mt-0.5">
-                    {selectedSupplier.code} • {selectedSupplier.category}
+      {/* Slide-over Right Drawer for Selected Supplier */}
+      {selectedSupplier && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="fixed inset-0 bg-[#252922]/50 backdrop-blur-xs transition-opacity duration-300"
+            onClick={() => setSelectedSupplier(null)}
+          />
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-10 pointer-events-none">
+            <div className="w-screen max-w-md bg-white shadow-2xl border-l border-[#DEDCCF] pointer-events-auto flex flex-col h-full animate-in slide-in-from-right duration-300">
+              <div className="p-4 border-b border-[#DEDCCF] flex items-center justify-between bg-[#F7F4ED]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 border border-red-300 flex items-center justify-center text-lg shrink-0">
+                    🏢
                   </div>
-                  <div className="mt-1">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-[#252922] leading-tight">
+                      {selectedSupplier.name}
+                    </h3>
+                    <div className="text-[11px] text-[#8C877D] font-mono mt-0.5">
+                      {selectedSupplier.code} • {selectedSupplier.category}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedSupplier(null)}
+                  className="p-1.5 text-[#8C877D] hover:text-[#252922] rounded-control hover:bg-stone-200 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex border-b border-[#DEDCCF] px-4 gap-1 text-xs bg-white">
+                {[
+                  { id: 'info', label: 'Informasi' },
+                  { id: 'contact', label: 'Kontak' },
+                  { id: 'address', label: 'Alamat' },
+                  { id: 'history', label: 'Riwayat Pembelian' },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setDrawerTab(t.id)}
+                    className={`py-3 px-3 font-bold border-b-2 transition ${
+                      drawerTab === t.id
+                        ? 'border-[#234536] text-[#234536]'
+                        : 'border-transparent text-[#625D53] hover:text-[#252922]'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Information Body */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+                <div className="bg-[#F7F4ED] rounded-control p-3.5 space-y-2 border border-[#DEDCCF]">
+                  <div className="flex justify-between">
+                    <span className="text-[#625D53]">Nama Supplier</span>
+                    <span className="font-bold text-[#252922]">{selectedSupplier.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#625D53]">Kategori Utama</span>
+                    <span className="font-bold text-[#252922]">{selectedSupplier.category}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#625D53]">NPWP</span>
+                    <span className="font-bold text-[#252922]">{selectedSupplier.npwp}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#625D53]">Termin Pembayaran</span>
+                    <span className="font-bold text-[#252922]">{selectedSupplier.termDays} Hari</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#625D53]">Status Kemitraan</span>
                     <StatusBadge status={selectedSupplier.status} size="xs" />
                   </div>
                 </div>
-              </div>
 
-              <button
-                onClick={() => setSelectedSupplier(null)}
-                className="p-1 text-[#8C877D] hover:text-[#252922] rounded transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Tabs */}
-            <div className="flex border-b border-[#DEDCCF] gap-1 text-xs">
-              {[
-                { id: 'info', label: 'Informasi' },
-                { id: 'contact', label: 'Kontak' },
-                { id: 'address', label: 'Alamat' },
-                { id: 'history', label: 'Riwayat Pembelian' },
-              ].map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setDrawerTab(t.id)}
-                  className={`py-1.5 px-2.5 font-bold border-b-2 transition ${
-                    drawerTab === t.id
-                      ? 'border-[#234536] text-[#234536]'
-                      : 'border-transparent text-[#625D53] hover:text-[#252922]'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Information Body */}
-            <div className="space-y-3 text-xs">
-              <div className="bg-[#F7F4ED] rounded-control p-3.5 space-y-2 border border-[#DEDCCF]">
-                <div className="flex justify-between">
-                  <span className="text-[#625D53]">Nama Supplier</span>
-                  <span className="font-bold text-[#252922]">{selectedSupplier.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#625D53]">Kategori Utama</span>
-                  <span className="font-bold text-[#252922]">{selectedSupplier.category}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#625D53]">NPWP</span>
-                  <span className="font-bold text-[#252922]">{selectedSupplier.npwp}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#625D53]">Termin Pembayaran</span>
-                  <span className="font-bold text-[#252922]">{selectedSupplier.termDays} Hari</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#625D53]">Mata Uang</span>
-                  <span className="font-bold text-[#252922]">Rupiah (IDR)</span>
-                </div>
-              </div>
-
-              {/* KPI Boxes */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-emerald-50 rounded-control border border-emerald-200">
-                  <div className="text-[10px] text-[#16845B] font-bold">Total Pembelian</div>
-                  <div className="text-sm font-black text-[#16845B] mt-0.5">
-                    {formatRupiah(selectedSupplier.totalPurchases)}
+                {/* KPI Boxes */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-emerald-50 rounded-control border border-emerald-200">
+                    <div className="text-[10px] text-[#16845B] font-bold">Total Pembelian</div>
+                    <div className="text-sm font-black text-[#16845B] mt-0.5">
+                      {formatRupiah(selectedSupplier.totalPurchases)}
+                    </div>
+                    <div className="text-[10px] text-[#625D53] mt-0.5">({selectedSupplier.trxCount} transaksi)</div>
                   </div>
-                  <div className="text-[10px] text-[#625D53] mt-0.5">({selectedSupplier.trxCount} transaksi)</div>
-                </div>
 
-                <div className="p-3 bg-amber-50 rounded-control border border-amber-200">
-                  <div className="text-[10px] text-[#D97706] font-bold">Transaksi Terakhir</div>
-                  <div className="text-xs font-extrabold text-[#D97706] mt-0.5">
-                    {selectedSupplier.lastTrxDate}
-                  </div>
-                  <div className="text-[10px] text-[#625D53] mt-0.5">
-                    {formatRupiah(selectedSupplier.lastTrxAmount)}
+                  <div className="p-3 bg-amber-50 rounded-control border border-amber-200">
+                    <div className="text-[10px] text-[#D97706] font-bold">Transaksi Terakhir</div>
+                    <div className="text-xs font-extrabold text-[#D97706] mt-0.5">
+                      {selectedSupplier.lastTrxDate}
+                    </div>
+                    <div className="text-[10px] text-[#625D53] mt-0.5">
+                      {formatRupiah(selectedSupplier.lastTrxAmount)}
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="pt-2 grid grid-cols-3 gap-2">
+              {/* Drawer Footer Actions */}
+              <div className="p-4 border-t border-[#DEDCCF] bg-[#F7F4ED] flex items-center justify-between">
                 <button
-                  onClick={() => alert('Membuka riwayat PO barang masuk supplier ini...')}
-                  className="py-2 px-2 rounded-control bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] text-[#252922] font-bold text-[11px] flex items-center justify-center gap-1 transition"
+                  type="button"
+                  onClick={() => setDeleteConfirmSupplier(selectedSupplier)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-[#C62828] hover:bg-red-50 p-2 rounded-control transition"
                 >
-                  <History className="w-3.5 h-3.5" />
-                  <span>Riwayat</span>
+                  <Trash2 className="w-4 h-4" />
+                  <span>Hapus Supplier</span>
                 </button>
 
-                <button
-                  onClick={() => alert('Edit data supplier')}
-                  className="py-2 px-2 rounded-control bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] text-[#252922] font-bold text-[11px] flex items-center justify-center gap-1 transition"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Edit</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setSelectedSupplier((prev) => ({
-                      ...prev,
-                      status: prev.status === 'aktif' ? 'non-aktif' : 'aktif',
-                    }));
-                  }}
-                  className="py-2 px-2 rounded-control bg-rose-50 hover:bg-rose-100 text-[#C62828] font-bold text-[11px] flex items-center justify-center gap-1 transition"
-                >
-                  <Ban className="w-3.5 h-3.5" />
-                  <span>{selectedSupplier.status === 'aktif' ? 'Non-aktif' : 'Aktifkan'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedSupplier((prev) => ({
+                        ...prev,
+                        status: prev.status === 'aktif' ? 'non-aktif' : 'aktif',
+                      }));
+                    }}
+                    className="py-2 px-3 rounded-control bg-white border border-[#DEDCCF] text-[#252922] font-bold text-xs hover:bg-stone-100 transition"
+                  >
+                    {selectedSupplier.status === 'aktif' ? 'Non-aktifkan' : 'Aktifkan'}
+                  </button>
+                  <button
+                    onClick={() => setSelectedSupplier(null)}
+                    className="py-2 px-4 rounded-control bg-[#234536] text-white font-extrabold text-xs hover:bg-[#1c372b] transition shadow-xs"
+                  >
+                    Selesai
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Modal: Konfirmasi Hapus Supplier */}
+      {deleteConfirmSupplier && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#252922]/60 backdrop-blur-xs">
+          <div className="bg-white rounded-card max-w-md w-full p-6 shadow-modal border border-[#DEDCCF] space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 pb-3 border-b border-[#DEDCCF]">
+              <div className="w-10 h-10 rounded-full bg-red-100 text-[#C62828] flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-[#252922]">Hapus Data Supplier?</h3>
+                <p className="text-xs text-[#625D53]">Data supplier akan dihapus dari daftar mitra pemasok.</p>
+              </div>
+            </div>
+
+            <div className="text-xs text-[#252922] bg-[#F7F4ED] p-3 rounded-control border border-[#DEDCCF] space-y-1">
+              <div>Supplier yang akan dihapus:</div>
+              <div className="font-extrabold text-sm text-[#234536]">{deleteConfirmSupplier.name}</div>
+              <div className="text-[#625D53]">Kode: {deleteConfirmSupplier.code} • Kategori: {deleteConfirmSupplier.category}</div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmSupplier(null)}
+                className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED] text-xs text-[#252922]"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSupplier}
+                className="px-5 py-2 rounded-control bg-[#C62828] hover:bg-[#b02222] text-white font-extrabold text-xs shadow-xs flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Ya, Hapus Supplier</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Tambah Supplier */}
       {isAddModalOpen && (

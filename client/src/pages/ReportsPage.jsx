@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api.js';
 import { formatRupiah } from '../utils/formatters.js';
@@ -18,12 +19,19 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 
-export default function ReportsPage({ subTab = 'summary', setSubTab }) {
-  const [localTab, setLocalTab] = useState(subTab || 'summary');
-  const activeTabKey = subTab || localTab;
+export default function ReportsPage({ subTab, setSubTab }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const [localTab, setLocalTab] = useState(urlTab || subTab || 'summary');
+  const activeTabKey = urlTab || subTab || localTab;
 
   const handleTabChange = (tabId) => {
     setLocalTab(tabId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tabId);
+      return next;
+    });
     if (setSubTab) setSubTab(tabId);
   };
 

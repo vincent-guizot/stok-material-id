@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore.js';
 import {
   LogIn,
@@ -7,10 +8,15 @@ import {
 import logoImg from '../assets/logo.png';
 
 export default function LoginPage() {
-  const { login, quickDemoLogin, isLoading, error } = useAuthStore();
+  const navigate = useNavigate();
+  const { user, login, quickDemoLogin, isLoading, error } = useAuthStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState(null);
+
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,8 +26,17 @@ export default function LoginPage() {
       return;
     }
     const res = await login(username, password);
-    if (!res.success) {
+    if (res.success) {
+      navigate('/', { replace: true });
+    } else {
       setLocalError(res.message);
+    }
+  };
+
+  const handleDemoLogin = async (roleKey) => {
+    const res = await quickDemoLogin(roleKey);
+    if (res.success) {
+      navigate('/', { replace: true });
     }
   };
 
@@ -113,7 +128,7 @@ export default function LoginPage() {
           <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
-              onClick={() => quickDemoLogin('admin')}
+              onClick={() => handleDemoLogin('admin')}
               className="p-2.5 rounded-control bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] text-center transition flex flex-col items-center justify-center gap-1 group"
             >
               <div className="w-7 h-7 rounded-full bg-emerald-100 text-[#234536] flex items-center justify-center text-xs font-bold">
@@ -125,7 +140,7 @@ export default function LoginPage() {
 
             <button
               type="button"
-              onClick={() => quickDemoLogin('cashier')}
+              onClick={() => handleDemoLogin('cashier')}
               className="p-2.5 rounded-control bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] text-center transition flex flex-col items-center justify-center gap-1 group"
             >
               <div className="w-7 h-7 rounded-full bg-amber-100 text-[#D97706] flex items-center justify-center text-xs font-bold">
@@ -137,7 +152,7 @@ export default function LoginPage() {
 
             <button
               type="button"
-              onClick={() => quickDemoLogin('warehouse')}
+              onClick={() => handleDemoLogin('warehouse')}
               className="p-2.5 rounded-control bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] text-center transition flex flex-col items-center justify-center gap-1 group"
             >
               <div className="w-7 h-7 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-bold">

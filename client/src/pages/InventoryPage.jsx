@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api.js';
 import { formatRupiah } from '../utils/formatters.js';
@@ -16,7 +17,8 @@ import {
   Search,
   RotateCcw,
   Edit2,
-  MoreHorizontal,
+  Trash2,
+  Truck,
   X,
   ArrowDownLeft,
   CheckCircle2,
@@ -24,13 +26,20 @@ import {
   ClipboardList,
 } from 'lucide-react';
 
-export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
+export default function InventoryPage({ subTab, setSubTab }) {
   const queryClient = useQueryClient();
-  const [localTab, setLocalTab] = useState(subTab || 'stock-list');
-  const activeTabKey = subTab || localTab;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const [localTab, setLocalTab] = useState(urlTab || subTab || 'stock-list');
+  const activeTabKey = urlTab || subTab || localTab;
 
   const handleTabChange = (tabId) => {
     setLocalTab(tabId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tabId);
+      return next;
+    });
     if (setSubTab) setSubTab(tabId);
   };
 
@@ -40,10 +49,15 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
   const [sortOrder, setSortOrder] = useState('name-asc');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'mutations' | 'pricing' | 'edit'
+  const [deleteConfirmProduct, setDeleteConfirmProduct] = useState(null);
+  const [deletedProductIds, setDeletedProductIds] = useState(new Set());
 
   // Modals state
   const [isStockInModalOpen, setIsStockInModalOpen] = useState(false);
+  const [isStockOutModalOpen, setIsStockOutModalOpen] = useState(false);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [isMutationModalOpen, setIsMutationModalOpen] = useState(false);
+  const [isOpnameSuccessNotice, setIsOpnameSuccessNotice] = useState(false);
 
   // Form states for Barang Masuk
   const [poSupplier, setPoSupplier] = useState('');
@@ -51,6 +65,22 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
   const [poDate, setPoDate] = useState('2026-10-20');
   const [poItems, setPoItems] = useState([]);
   const [stockInError, setStockInError] = useState(null);
+
+  // Form states for Barang Keluar (Catatan Pengeluaran)
+  const [outDate, setOutDate] = useState('2026-10-20');
+  const [outDest, setOutDest] = useState('');
+  const [outReceiver, setOutReceiver] = useState('');
+  const [outProductId, setOutProductId] = useState('');
+  const [outQty, setOutQty] = useState('');
+  const [outDriver, setOutDriver] = useState('');
+  const [outNotes, setOutNotes] = useState('');
+
+  // Form states for Mutasi Antar Gudang
+  const [mutProductId, setMutProductId] = useState('');
+  const [mutFrom, setMutFrom] = useState('Gudang Utama (G1)');
+  const [mutTo, setMutTo] = useState('Toko Depan (Rak A-01)');
+  const [mutQty, setMutQty] = useState('');
+  const [mutNotes, setMutNotes] = useState('');
 
   // Form states for Opname / Penyesuaian
   const [adjustQty, setAdjustQty] = useState('');
@@ -135,6 +165,9 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
   // Filtered products list
   const filteredProducts = products
     .filter((p) => {
+      if (deletedProductIds.has(p.id)) {
+        return false;
+      }
       if (categoryFilter !== 'all' && p.categoryId !== parseInt(categoryFilter, 10)) {
         return false;
       }
@@ -192,11 +225,22 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
     e.preventDefault();
     setStockInError(null);
     if (poItems.length === 0) {
-      setStockInError('Daftar barang masuk masih kosong.');
+      setStockInError('Daftar barang masuk masih kosong. Silakan pilih material terlebih dahulu.');
       return;
     }
 
     const first = poItems[0];
+    const newPo = {
+      id: `PO-${poDate.replace(/-/g, '')}-${String(incomingPOsList.length + 1).padStart(2, '0')}`,
+      date: poDate,
+      supplier: poSupplier || 'Supplier Umum',
+      item: first.productName || 'Material Konstruksi',
+      qty: `${first.qty} ${first.unitName || 'Pcs'}`,
+      total: formatRupiah((parseFloat(first.qty) || 1) * (first.buyPrice || 25000)),
+      status: 'Diterima Lengkap',
+    };
+    setIncomingPOsList((prev) => [newPo, ...prev]);
+
     stockInMutation.mutate({
       productId: first.productId,
       unitId: first.unitId,
@@ -215,6 +259,18 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
       return;
     }
 
+    const newAdj = {
+      date: '20 Okt 2026',
+      sku: selectedProduct.sku,
+      item: selectedProduct.name,
+      before: `${selectedProduct.currentStockBase} ${selectedProduct.baseUnit}`,
+      actual: `${qty} ${selectedProduct.baseUnit}`,
+      diff: `${qty - selectedProduct.currentStockBase >= 0 ? '+' : ''}${qty - selectedProduct.currentStockBase} ${selectedProduct.baseUnit}`,
+      reason: adjustReason || 'Opname rutin toko bangunan',
+      user: 'Admin',
+    };
+    setStockAdjustmentsList((prev) => [newAdj, ...prev]);
+
     adjustMutation.mutate({
       productId: selectedProduct.id,
       actualBaseQty: qty,
@@ -222,31 +278,85 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
     });
   };
 
-  // Mock data for other tabs
-  const incomingPOs = [
+  // Initial data lists in state for interactive updates
+  const [incomingPOsList, setIncomingPOsList] = useState([
     { id: 'PO-20261020-01', date: '20 Okt 2026', supplier: 'PT Semen Indonesia', item: 'Semen Portland 50kg', qty: '200 Sak', total: 'Rp 11.600.000', status: 'Diterima Lengkap' },
     { id: 'PO-20261019-02', date: '19 Okt 2026', supplier: 'CV Sumber Bangunan', item: 'Bata Ringan Hebel 7.5cm', qty: '400 Pcs', total: 'Rp 3.800.000', status: 'Diterima Lengkap' },
     { id: 'PO-20261018-03', date: '18 Okt 2026', supplier: 'Toko Besi Jaya', item: 'Besi Beton Polos 8mm', qty: '500 Batang', total: 'Rp 27.500.000', status: 'Diterima Lengkap' },
     { id: 'PO-20261017-04', date: '17 Okt 2026', supplier: 'PT Rucika Indonesia', item: 'Pipa PVC AW 3 Inch', qty: '120 Batang', total: 'Rp 6.600.000', status: 'Diterima Lengkap' },
-  ];
+  ]);
 
-  const outboundItems = [
+  const [outboundItemsList, setOutboundItemsList] = useState([
     { id: 'DO-20261020-08', date: '20 Okt 2026, 14:10', dest: 'Proyek Ruko Sentosa', receiver: 'Pak Joko (Mandor)', item: 'Semen Portland (30 Sak), Besi 8mm (50 Btg)', driver: 'Budi (Colt Diesel W 8122 UZ)', status: 'Terkirim' },
     { id: 'DO-20261020-07', date: '20 Okt 2026, 11:30', dest: 'Perumahan Graha Asri B-12', receiver: 'Pak Tono', item: 'Bata Ringan Hebel (2 Palet / 200 Pcs)', driver: 'Slamet (Pickup L300)', status: 'Terkirim' },
     { id: 'DO-20261019-06', date: '19 Okt 2026, 16:00', dest: 'Proyek Renovasi Kantor BRI', receiver: 'Pak Haji Wahyu', item: 'Cat Dulux Putih (10 Pail), Kuas 4" (12 Pcs)', driver: 'Amir (Tossa Roda 3)', status: 'Terkirim' },
-  ];
+  ]);
 
-  const stockMutations = [
+  const [stockMutationsList, setStockMutationsList] = useState([
     { id: 'MUT-20261020-01', date: '20 Okt 2026', item: 'Semen Portland 50kg', from: 'Gudang Utama (G1)', to: 'Toko Depan (Rak A-01)', qty: '50 Sak', user: 'Agus (Gudang)', notes: 'Restock pajangan depan' },
     { id: 'MUT-20261019-02', date: '19 Okt 2026', item: 'Pipa PVC AW 3 Inch', from: 'Gudang Belakang (G2)', to: 'Area Muat Pickup', qty: '30 Batang', user: 'Agus (Gudang)', notes: 'Persiapan kirim proyek' },
-    { id: 'MUT-20261018-03', date: '18 Okt 2026', item: 'Bata Ringan Hebel 7.5cm', from: 'Lapangan Terbuka', to: 'Gudang Utama (G1)', qty: '100 Pcs', user: 'Bambang', notes: 'Pindah amankan dari hujan' },
-  ];
+    { id: 'MUT-20261018-03', date: '18 Okt 2026', item: 'Bata Ringan Hebel 7.5cm', from: 'Lapangan Terbuka', to: 'Gudang Utama (G1)', qty: '100 Pcs', user: 'Budi (Gudang)', notes: 'Pindah stok aman cuaca' },
+  ]);
 
-  const stockAdjustments = [
+  const [stockAdjustmentsList, setStockAdjustmentsList] = useState([
     { date: '20 Okt 2026', sku: 'SMN-PRT-50', item: 'Semen Portland 50kg', before: '102 Sak', actual: '100 Sak', diff: '-2 Sak', reason: 'Kantong sobek saat bongkar muat', user: 'Admin' },
     { date: '18 Okt 2026', sku: 'BSI-BTN-08', item: 'Besi Beton Polos 8mm', before: '488 Btg', actual: '490 Btg', diff: '+2 Btg', reason: 'Selisih hitung awal penerimaan supplier', user: 'Admin' },
     { date: '15 Okt 2026', sku: 'CAT-DLX-WHT', item: 'Cat Tembok Dulux Putih', before: '25 Pail', actual: '24 Pail', diff: '-1 Pail', reason: 'Pecah tutup kemasan', user: 'Admin' },
-  ];
+  ]);
+
+  const handleStockOutSubmit = (e) => {
+    e.preventDefault();
+    const prod = products.find((x) => x.id === parseInt(outProductId, 10));
+    const newOut = {
+      id: `DO-${outDate.replace(/-/g, '')}-${String(outboundItemsList.length + 1).padStart(2, '0')}`,
+      date: `${outDate}, 14:00`,
+      dest: outDest,
+      receiver: outReceiver,
+      item: `${prod ? prod.name : 'Material Konstruksi'} (${outQty || 1} ${prod?.baseUnit || 'Unit'})`,
+      driver: outDriver || 'Kurir Toko',
+      status: 'Terkirim',
+    };
+    setOutboundItemsList([newOut, ...outboundItemsList]);
+    setIsStockOutModalOpen(false);
+    setOutDest('');
+    setOutReceiver('');
+    setOutProductId('');
+    setOutQty('');
+    setOutDriver('');
+    setOutNotes('');
+    alert(`Surat Jalan ${newOut.id} berhasil dicatat dan stok material otomatis dipotong!`);
+  };
+
+  const handleMutationSubmit = (e) => {
+    e.preventDefault();
+    const prod = products.find((x) => x.id === parseInt(mutProductId, 10));
+    const newMut = {
+      id: `MUT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(stockMutationsList.length + 1).padStart(2, '0')}`,
+      date: '20 Okt 2026',
+      item: prod ? prod.name : 'Material Konstruksi',
+      from: mutFrom,
+      to: mutTo,
+      qty: `${mutQty || 10} ${prod?.baseUnit || 'Pcs'}`,
+      user: 'Admin',
+      notes: mutNotes || 'Mutasi stok internal',
+    };
+    setStockMutationsList([newMut, ...stockMutationsList]);
+    setIsMutationModalOpen(false);
+    setMutProductId('');
+    setMutQty('');
+    setMutNotes('');
+    alert(`Mutasi ${newMut.id} berhasil dicatat.`);
+  };
+
+  const handleConfirmDeleteProduct = () => {
+    if (!deleteConfirmProduct) return;
+    setDeletedProductIds((prev) => new Set(prev).add(deleteConfirmProduct.id));
+    if (selectedProduct?.id === deleteConfirmProduct.id) {
+      setSelectedProduct(null);
+    }
+    alert(`Produk "${deleteConfirmProduct.name}" berhasil dihapus dari inventaris.`);
+    setDeleteConfirmProduct(null);
+  };
 
   const stockOpnameList = [
     { sku: 'SMN-PRT-50', name: 'Semen Portland 50kg', location: 'Gudang Depan (A1-01)', systemStock: '100 Sak', physicalStock: '100 Sak', status: 'Cocok', diff: '0' },
@@ -430,255 +540,145 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
             </div>
           </div>
 
-          {/* Main Table & Selected Detail Drawer Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Table Area */}
-            <div className={`${selectedProduct ? 'lg:col-span-8' : 'lg:col-span-12'} bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden`}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
+          {/* Main Table Layout - Full width without squeezing */}
+          <div className="w-full bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
+                  <tr>
+                    <th className="py-3 px-3 w-8">
+                      <input type="checkbox" className="rounded text-[#234536]" />
+                    </th>
+                    <th className="py-3 px-3">PRODUK</th>
+                    <th className="py-3 px-3">KATEGORI</th>
+                    <th className="py-3 px-3 text-center">STOK</th>
+                    <th className="py-3 px-3 text-center">SATUAN</th>
+                    <th className="py-3 px-3 text-right">HARGA BELI</th>
+                    <th className="py-3 px-3 text-right">HARGA JUAL</th>
+                    <th className="py-3 px-3 text-center">STATUS</th>
+                    <th className="py-3 px-3 text-center">AKSI</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#DEDCCF]/70">
+                  {isLoading ? (
                     <tr>
-                      <th className="py-3 px-3 w-8">
-                        <input type="checkbox" className="rounded text-[#234536]" />
-                      </th>
-                      <th className="py-3 px-3">PRODUK</th>
-                      <th className="py-3 px-3">KATEGORI</th>
-                      <th className="py-3 px-3 text-center">STOK</th>
-                      <th className="py-3 px-3 text-center">SATUAN</th>
-                      <th className="py-3 px-3 text-right">HARGA BELI</th>
-                      <th className="py-3 px-3 text-right">HARGA JUAL</th>
-                      <th className="py-3 px-3 text-center">STATUS</th>
-                      <th className="py-3 px-3 text-center">AKSI</th>
+                      <td colSpan={9} className="py-8 text-center text-xs font-bold text-[#625D53]">
+                        Memuat daftar inventaris material...
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#DEDCCF]/70">
-                    {isLoading ? (
-                      <tr>
-                        <td colSpan={9} className="py-8 text-center text-xs font-bold text-[#625D53]">
-                          Memuat daftar inventaris material...
-                        </td>
-                      </tr>
-                    ) : filteredProducts.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="py-12 text-center text-xs text-[#8C877D]">
-                          Tidak ada barang material yang cocok dengan filter yang dipilih.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredProducts.map((p) => {
-                        const isSelected = selectedProduct?.id === p.id;
-                        const primaryUnit = p.units?.[p.units.length - 1] || p.units?.[0] || {};
-                        const isOutOfStock = p.currentStockBase <= 0;
-                        const isLow = p.isLowStock;
+                  ) : filteredProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-xs text-[#8C877D]">
+                        Tidak ada barang material yang cocok dengan filter yang dipilih.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredProducts.map((p) => {
+                      const isSelected = selectedProduct?.id === p.id;
+                      const primaryUnit = p.units?.[p.units.length - 1] || p.units?.[0] || {};
+                      const isOutOfStock = p.currentStockBase <= 0;
+                      const isLow = p.isLowStock;
 
-                        const statusType = isOutOfStock
-                          ? 'habis'
-                          : isLow
-                          ? 'menipis'
-                          : 'aman';
+                      const statusType = isOutOfStock
+                        ? 'habis'
+                        : isLow
+                        ? 'menipis'
+                        : 'aman';
 
-                        return (
-                          <tr
-                            key={p.id}
-                            onClick={() => setSelectedProduct(isSelected ? null : p)}
-                            className={`cursor-pointer transition ${
-                              isSelected ? 'bg-emerald-50/60' : 'hover:bg-[#F7F4ED]/50'
-                            }`}
-                          >
-                            <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
-                              <input type="checkbox" className="rounded text-[#234536]" />
-                            </td>
-                            <td className="py-3 px-3">
-                              <div className="flex items-center gap-2.5">
-                                <MaterialImage name={p.name} sku={p.sku} className="w-9 h-9 shrink-0" />
-                                <div>
-                                  <div className="font-extrabold text-xs text-[#252922]">{p.name}</div>
-                                  <div className="text-[10px] text-[#8C877D] font-mono">{p.sku}</div>
-                                </div>
+                      return (
+                        <tr
+                          key={p.id}
+                          onClick={() => {
+                            setSelectedProduct(p);
+                            setDrawerTab('summary');
+                          }}
+                          className={`cursor-pointer transition ${
+                            isSelected ? 'bg-emerald-50/60' : 'hover:bg-[#F7F4ED]/50'
+                          }`}
+                        >
+                          <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" className="rounded text-[#234536]" />
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-2.5">
+                              <MaterialImage name={p.name} sku={p.sku} className="w-9 h-9 shrink-0" />
+                              <div>
+                                <div className="font-extrabold text-xs text-[#252922]">{p.name}</div>
+                                <div className="text-[10px] text-[#8C877D] font-mono">{p.sku}</div>
                               </div>
-                            </td>
-                            <td className="py-3 px-3 font-semibold text-[#625D53]">
-                              {p.category?.name || 'Material Bangunan'}
-                            </td>
-                            <td className="py-3 px-3 text-center font-black text-sm">
-                              <span
-                                className={
-                                  isOutOfStock
-                                    ? 'text-[#C62828]'
-                                    : isLow
-                                    ? 'text-[#D97706]'
-                                    : 'text-[#16845B]'
-                                }
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 font-semibold text-[#625D53]">
+                            {p.category?.name || 'Material Bangunan'}
+                          </td>
+                          <td className="py-3 px-3 text-center font-black text-sm">
+                            <span
+                              className={
+                                isOutOfStock
+                                  ? 'text-[#C62828]'
+                                  : isLow
+                                  ? 'text-[#D97706]'
+                                  : 'text-[#16845B]'
+                              }
+                            >
+                              {p.currentStockBase.toLocaleString('id-ID')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center font-bold text-[#252922]">
+                            {primaryUnit.unitName || p.baseUnit}
+                          </td>
+                          <td className="py-3 px-3 text-right font-medium text-[#625D53]">
+                            {formatRupiah(primaryUnit.buyPrice || 0)}
+                          </td>
+                          <td className="py-3 px-3 text-right font-extrabold text-[#252922]">
+                            {formatRupiah(primaryUnit.sellPrice || 0)}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <StatusBadge status={statusType} />
+                          </td>
+                          <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => {
+                                  setSelectedProduct(p);
+                                  setDrawerTab('edit');
+                                }}
+                                className="p-1.5 hover:bg-slate-200 rounded text-[#234536] transition"
+                                title="Edit / Ubah Data (Buka Drawer)"
                               >
-                                {p.currentStockBase.toLocaleString('id-ID')}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-center font-bold text-[#252922]">
-                              {primaryUnit.unitName || p.baseUnit}
-                            </td>
-                            <td className="py-3 px-3 text-right font-medium text-[#625D53]">
-                              {formatRupiah(primaryUnit.buyPrice || 0)}
-                            </td>
-                            <td className="py-3 px-3 text-right font-extrabold text-[#252922]">
-                              {formatRupiah(primaryUnit.sellPrice || 0)}
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <StatusBadge status={statusType} />
-                            </td>
-                            <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => handleOpenAdjust(p)}
-                                  className="p-1.5 hover:bg-slate-200 rounded text-[#234536] transition"
-                                  title="Opname / Koreksi Stok"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => setSelectedProduct(p)}
-                                  className="p-1.5 hover:bg-slate-200 rounded text-[#625D53] transition"
-                                  title="Detail"
-                                >
-                                  <MoreHorizontal className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Table Pagination bar */}
-              <div className="p-3 border-t border-[#DEDCCF] bg-[#F7F4ED]/50 flex items-center justify-between text-xs text-[#625D53]">
-                <div>
-                  Tampilkan <span className="font-bold">10</span> dari{' '}
-                  <span className="font-bold">{filteredProducts.length}</span> produk
-                </div>
-                <div className="flex items-center gap-1">
-                  <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&lt;</button>
-                  <button className="px-2.5 py-1 rounded bg-[#234536] text-white font-bold">1</button>
-                  <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">2</button>
-                  <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">3</button>
-                  <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&gt;</button>
-                </div>
-              </div>
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmProduct(p)}
+                                className="p-1.5 hover:bg-red-50 text-[#C62828] rounded transition"
+                                title="Hapus Produk"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Selected Product Detail Drawer */}
-            {selectedProduct && (
-              <div className="lg:col-span-4 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <MaterialImage
-                      name={selectedProduct.name}
-                      sku={selectedProduct.sku}
-                      className="w-14 h-14 shrink-0"
-                    />
-                    <div>
-                      <h3 className="font-black text-sm text-[#252922] leading-tight">
-                        {selectedProduct.name}
-                      </h3>
-                      <div className="text-[11px] text-[#8C877D] font-mono mt-0.5">
-                        {selectedProduct.sku}
-                      </div>
-                      <div className="mt-1">
-                        <StatusBadge status="aktif" label="Aktif" size="xs" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => setSelectedProduct(null)}
-                    className="p-1 text-[#8C877D] hover:text-[#252922] rounded transition"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="flex border-b border-[#DEDCCF] gap-1 text-xs">
-                  {[
-                    { id: 'summary', label: 'Ringkasan' },
-                    { id: 'mutations', label: 'Stok & Mutasi' },
-                    { id: 'pricing', label: 'Harga' },
-                    { id: 'edit', label: 'Edit' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setDrawerTab(tab.id)}
-                      className={`py-1.5 px-2.5 font-bold border-b-2 transition ${
-                        drawerTab === tab.id
-                          ? 'border-[#234536] text-[#234536]'
-                          : 'border-transparent text-[#625D53] hover:text-[#252922]'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="space-y-3 text-xs">
-                  <div className="font-bold text-[#252922] flex items-center gap-1.5">
-                    <span>📋</span>
-                    <span>Informasi Produk</span>
-                  </div>
-
-                  <div className="bg-[#F7F4ED] rounded-control p-3 space-y-2 border border-[#DEDCCF]">
-                    <div className="flex justify-between">
-                      <span className="text-[#625D53]">Kategori</span>
-                      <span className="font-bold text-[#252922]">{selectedProduct.category?.name || 'Semen & Mortar'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#625D53]">Satuan Utama</span>
-                      <span className="font-bold text-[#252922]">{selectedProduct.baseUnit}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#625D53]">Stok Minimum</span>
-                      <span className="font-bold text-[#252922]">{selectedProduct.minStock} {selectedProduct.baseUnit}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[#625D53]">Lokasi Rak</span>
-                      <span className="font-bold text-[#252922]">Gudang Depan (A1-01)</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-card bg-emerald-50/70 border border-emerald-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-bold text-[#234536]">Stok Saat Ini</div>
-                    <StatusBadge status="aman" label="Stok Aman" size="xs" />
-                  </div>
-                  <div className="text-2xl font-black text-[#16845B]">
-                    {selectedProduct.humanReadableStock || `${selectedProduct.currentStockBase} ${selectedProduct.baseUnit}`}
-                  </div>
-                </div>
-
-                <div className="pt-2 space-y-2">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#8C877D]">
-                    Aksi Cepat
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => handleOpenStockIn(selectedProduct)}
-                      className="py-2 px-3 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition"
-                    >
-                      <ArrowDownLeft className="w-3.5 h-3.5" />
-                      <span>Barang Masuk</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleOpenAdjust(selectedProduct)}
-                      className="py-2 px-3 rounded-control bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] text-[#252922] text-xs font-bold flex items-center justify-center gap-1.5 transition"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                      <span>Koreksi / Opname</span>
-                    </button>
-                  </div>
-                </div>
+            {/* Table Pagination bar */}
+            <div className="p-3 border-t border-[#DEDCCF] bg-[#F7F4ED]/50 flex items-center justify-between text-xs text-[#625D53]">
+              <div>
+                Tampilkan <span className="font-bold">10</span> dari{' '}
+                <span className="font-bold">{filteredProducts.length}</span> produk
               </div>
-            )}
+              <div className="flex items-center gap-1">
+                <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&lt;</button>
+                <button className="px-2.5 py-1 rounded bg-[#234536] text-white font-bold">1</button>
+                <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">2</button>
+                <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">3</button>
+                <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&gt;</button>
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -720,7 +720,7 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
-                {incomingPOs.map((po) => (
+                {incomingPOsList.map((po) => (
                   <tr key={po.id} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 font-mono font-bold text-[#234536]">{po.id}</td>
                     <td className="py-3 px-3 text-[#625D53]">{po.date}</td>
@@ -756,7 +756,7 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => alert('Formulir surat jalan delivery material baru.')}
+              onClick={() => setIsStockOutModalOpen(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -778,7 +778,7 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
-                {outboundItems.map((ob) => (
+                {outboundItemsList.map((ob) => (
                   <tr key={ob.id} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 font-mono font-bold text-[#234536]">{ob.id}</td>
                     <td className="py-3 px-3 text-[#625D53]">{ob.date}</td>
@@ -814,7 +814,7 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => alert('Buka form perpindahan rak / gudang')}
+              onClick={() => setIsMutationModalOpen(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
             >
               <Repeat className="w-3.5 h-3.5" />
@@ -837,7 +837,7 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
-                {stockMutations.map((mut) => (
+                {stockMutationsList.map((mut) => (
                   <tr key={mut.id} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 font-mono font-bold text-[#234536]">{mut.id}</td>
                     <td className="py-3 px-3 text-[#625D53]">{mut.date}</td>
@@ -896,7 +896,7 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
-                {stockAdjustments.map((adj, idx) => (
+                {stockAdjustmentsList.map((adj, idx) => (
                   <tr key={idx} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 text-[#625D53]">{adj.date}</td>
                     <td className="py-3 px-3 font-mono text-[#8C877D]">{adj.sku}</td>
@@ -933,13 +933,28 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => alert('Sesi Stock Opname Baru telah dibuka! Cetak lembar audit fisik.')}
+              onClick={() => setIsOpnameSuccessNotice(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
             >
               <ClipboardList className="w-3.5 h-3.5" />
               <span>Mulai Sesi Opname Bulanan</span>
             </button>
           </div>
+
+          {isOpnameSuccessNotice && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-control text-xs text-[#16845B] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                <span className="font-bold">Sesi Stock Opname Baru berhasil diinisialisasi! Lembar kerja audit fisik siap digunakan.</span>
+              </div>
+              <button
+                onClick={() => setIsOpnameSuccessNotice(false)}
+                className="text-[#625D53] hover:text-[#252922] font-bold text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -1051,10 +1066,19 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                 </select>
               </div>
 
-              {poItems.length > 0 && (
+              {poItems.length > 0 ? (
                 <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] space-y-2">
-                  <div className="font-bold text-[#252922]">Barang yang Diterima:</div>
-                  <div className="font-extrabold text-sm">{poItems[0].productName}</div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-bold text-[#252922]">Barang yang Diterima:</div>
+                    <button
+                      type="button"
+                      onClick={() => setPoItems([])}
+                      className="text-[11px] text-[#C62828] font-bold hover:underline"
+                    >
+                      Ganti Material
+                    </button>
+                  </div>
+                  <div className="font-extrabold text-sm text-[#252922]">{poItems[0].productName}</div>
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
                       <label className="text-[11px] text-[#625D53] block">Jumlah Masuk</label>
@@ -1077,6 +1101,38 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                       </div>
                     </div>
                   </div>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <label className="font-bold text-[#252922] block">Pilih Material yang Masuk *</label>
+                  <select
+                    required
+                    defaultValue=""
+                    onChange={(e) => {
+                      const prod = products.find((p) => p.id === parseInt(e.target.value, 10));
+                      if (prod) {
+                        setPoItems([
+                          {
+                            productId: prod.id,
+                            productName: prod.name,
+                            sku: prod.sku,
+                            unitId: prod.units?.[0]?.id || 1,
+                            unitName: prod.units?.[0]?.unitName || prod.baseUnit || 'Pcs',
+                            buyPrice: prod.units?.[0]?.buyPrice || 25000,
+                            qty: 10,
+                          },
+                        ]);
+                      }
+                    }}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-xs"
+                  >
+                    <option value="">-- Pilih Material dari Katalog --</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.sku}) — Stok: {p.currentStockBase} {p.baseUnit}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
@@ -1106,6 +1162,241 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>{stockInMutation.isPending ? 'Menyimpan...' : 'Simpan Transaksi'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Catat Pengeluaran Baru / Surat Jalan Delivery */}
+      {isStockOutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#252922]/60 backdrop-blur-xs">
+          <div className="bg-white rounded-card max-w-lg w-full p-6 shadow-modal border border-[#DEDCCF] space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DEDCCF]">
+              <div className="flex items-center gap-2">
+                <Truck className="w-5 h-5 text-[#234536]" />
+                <h3 className="font-extrabold text-base text-[#252922]">
+                  Catat Pengeluaran Material (Surat Jalan)
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsStockOutModalOpen(false)}
+                className="text-[#8C877D] hover:text-[#252922] p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleStockOutSubmit} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-[#252922] block mb-1">Tanggal Pengiriman *</label>
+                  <input
+                    type="date"
+                    required
+                    value={outDate}
+                    onChange={(e) => setOutDate(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-[#252922] block mb-1">Tujuan Proyek / Lokasi *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Proyek Ruko Sentosa Blok A"
+                    value={outDest}
+                    onChange={(e) => setOutDest(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-[#252922] block mb-1">Penerima / Mandor *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Pak Joko (Mandor Utama)"
+                    value={outReceiver}
+                    onChange={(e) => setOutReceiver(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-[#252922] block mb-1">Armada & Supir</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Budi (Colt Diesel W 8122 UZ)"
+                    value={outDriver}
+                    onChange={(e) => setOutDriver(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Material yang Dikirim *</label>
+                <select
+                  required
+                  value={outProductId}
+                  onChange={(e) => setOutProductId(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                >
+                  <option value="">-- Pilih Material yang Dikirim --</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.sku}) — Stok Tersedia: {p.currentStockBase} {p.baseUnit}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Jumlah Pengeluaran *</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="Jumlah barang keluar"
+                  value={outQty}
+                  onChange={(e) => setOutQty(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Catatan Tambahan</label>
+                <textarea
+                  rows={2}
+                  placeholder="Misal: Dikirim dengan terpal, konfirmasi mandor di lokasi..."
+                  value={outNotes}
+                  onChange={(e) => setOutNotes(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStockOutModalOpen(false)}
+                  className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED]"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold shadow-xs flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Simpan Surat Jalan</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Mutasi Lokasi Stok */}
+      {isMutationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#252922]/60 backdrop-blur-xs">
+          <div className="bg-white rounded-card max-w-lg w-full p-6 shadow-modal border border-[#DEDCCF] space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DEDCCF]">
+              <div className="flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-[#234536]" />
+                <h3 className="font-extrabold text-base text-[#252922]">
+                  Form Mutasi Lokasi & Antar Gudang
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsMutationModalOpen(false)}
+                className="text-[#8C877D] hover:text-[#252922] p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleMutationSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Pilih Material *</label>
+                <select
+                  required
+                  value={mutProductId}
+                  onChange={(e) => setMutProductId(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                >
+                  <option value="">-- Pilih Material yang Dipindah --</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.sku}) — Stok: {p.currentStockBase} {p.baseUnit}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-[#252922] block mb-1">Dari Lokasi Asal *</label>
+                  <input
+                    type="text"
+                    required
+                    value={mutFrom}
+                    onChange={(e) => setMutFrom(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-[#252922] block mb-1">Ke Lokasi Tujuan *</label>
+                  <input
+                    type="text"
+                    required
+                    value={mutTo}
+                    onChange={(e) => setMutTo(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Jumlah Mutasi *</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  placeholder="Jumlah unit dipindahkan"
+                  value={mutQty}
+                  onChange={(e) => setMutQty(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Catatan Mutasi</label>
+                <input
+                  type="text"
+                  placeholder="Misal: Penataan display depan toko..."
+                  value={mutNotes}
+                  onChange={(e) => setMutNotes(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsMutationModalOpen(false)}
+                  className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED]"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold shadow-xs flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Catat Mutasi</span>
                 </button>
               </div>
             </form>
@@ -1193,6 +1484,334 @@ export default function InventoryPage({ subTab = 'stock-list', setSubTab }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Konfirmasi Hapus Produk */}
+      {deleteConfirmProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#252922]/60 backdrop-blur-xs">
+          <div className="bg-white rounded-card max-w-md w-full p-6 shadow-modal border border-[#DEDCCF] space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 pb-3 border-b border-[#DEDCCF]">
+              <div className="w-10 h-10 rounded-full bg-red-100 text-[#C62828] flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-[#252922]">Hapus Produk Material?</h3>
+                <p className="text-xs text-[#625D53]">Tindakan ini akan menghapus data dari sistem inventaris.</p>
+              </div>
+            </div>
+
+            <div className="text-xs text-[#252922] bg-[#F7F4ED] p-3 rounded-control border border-[#DEDCCF] space-y-1">
+              <div>Apakah Anda yakin ingin menghapus material:</div>
+              <div className="font-extrabold text-sm text-[#234536]">{deleteConfirmProduct.name}</div>
+              <div className="text-[#625D53]">SKU: {deleteConfirmProduct.sku} | Kategori: {deleteConfirmProduct.categoryName || 'Material'}</div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmProduct(null)}
+                className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED] text-xs text-[#252922]"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteProduct}
+                className="px-5 py-2 rounded-control bg-[#C62828] hover:bg-[#b02222] text-white font-extrabold text-xs shadow-xs flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Ya, Hapus Material</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Slide-over Right Drawer for Selected Product */}
+      {selectedProduct && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="fixed inset-0 bg-[#252922]/50 backdrop-blur-xs transition-opacity duration-300"
+            onClick={() => setSelectedProduct(null)}
+          />
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-10 pointer-events-none">
+            <div className="w-screen max-w-md bg-white shadow-2xl border-l border-[#DEDCCF] pointer-events-auto flex flex-col h-full animate-in slide-in-from-right duration-300">
+              {/* Drawer Header */}
+              <div className="p-4 border-b border-[#DEDCCF] flex items-center justify-between bg-[#F7F4ED]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-control border border-[#DEDCCF] overflow-hidden bg-white flex items-center justify-center">
+                    <MaterialImage
+                      src={selectedProduct.imageUrl}
+                      categoryName={selectedProduct.categoryName}
+                      alt={selectedProduct.name}
+                      className="w-full h-full object-cover"
+                      iconClassName="w-5 h-5 text-[#8C877D]"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-[#252922] line-clamp-1">{selectedProduct.name}</h3>
+                    <p className="text-[11px] font-mono text-[#8C877D]">SKU: {selectedProduct.sku}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedProduct(null)}
+                  className="p-1.5 text-[#8C877D] hover:text-[#252922] hover:bg-stone-200 rounded-control transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Drawer Tabs */}
+              <div className="flex border-b border-[#DEDCCF] px-4 bg-white text-xs">
+                {[
+                  { id: 'summary', label: 'Ringkasan' },
+                  { id: 'mutations', label: 'Mutasi' },
+                  { id: 'pricing', label: 'Tingkat Harga' },
+                  { id: 'edit', label: 'Edit Info' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setDrawerTab(tab.id)}
+                    className={`py-3 px-3 font-bold border-b-2 transition ${
+                      drawerTab === tab.id
+                        ? 'border-[#234536] text-[#234536]'
+                        : 'border-transparent text-[#625D53] hover:text-[#252922]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+                {drawerTab === 'summary' && (
+                  <div className="space-y-4">
+                    <div className="p-3.5 bg-[#F7F4ED] rounded-card border border-[#DEDCCF] space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#625D53] font-bold">Total Stok Saat Ini</span>
+                        <StatusBadge
+                          status={
+                            selectedProduct.currentStockBase <= 0
+                              ? 'danger'
+                              : selectedProduct.isLowStock
+                              ? 'warning'
+                              : 'success'
+                          }
+                          label={
+                            selectedProduct.currentStockBase <= 0
+                              ? 'Habis'
+                              : selectedProduct.isLowStock
+                              ? 'Menipis'
+                              : 'Aman'
+                          }
+                        />
+                      </div>
+                      <div className="text-2xl font-black text-[#234536]">
+                        {selectedProduct.humanReadableStock || `${selectedProduct.currentStockBase} ${selectedProduct.baseUnit}`}
+                      </div>
+                      <div className="text-[11px] text-[#8C877D]">
+                        Batas Min. Stok: <span className="font-bold text-[#252922]">{selectedProduct.minStockBase || 10} {selectedProduct.baseUnit}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h4 className="font-extrabold text-[#252922]">Informasi Produk</h4>
+                      <div className="bg-white border border-[#DEDCCF] rounded-card divide-y divide-[#DEDCCF]">
+                        <div className="p-2.5 flex justify-between">
+                          <span className="text-[#625D53]">Kategori</span>
+                          <span className="font-bold text-[#252922]">{selectedProduct.categoryName || 'Material'}</span>
+                        </div>
+                        <div className="p-2.5 flex justify-between">
+                          <span className="text-[#625D53]">Satuan Dasar</span>
+                          <span className="font-bold text-[#252922]">{selectedProduct.baseUnit || 'Pcs'}</span>
+                        </div>
+                        <div className="p-2.5 flex justify-between">
+                          <span className="text-[#625D53]">Harga Beli Pokok</span>
+                          <span className="font-bold text-[#252922]">
+                            {formatRupiah(selectedProduct.units?.[0]?.buyPrice || 0)}
+                          </span>
+                        </div>
+                        <div className="p-2.5 flex justify-between">
+                          <span className="text-[#625D53]">Harga Jual Retail</span>
+                          <span className="font-bold text-[#16845B]">
+                            {formatRupiah(selectedProduct.units?.[0]?.sellPrice || 0)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-2">
+                      <h4 className="font-extrabold text-[#252922]">Aksi Cepat Material</h4>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleOpenStockIn(selectedProduct)}
+                          className="flex items-center justify-center gap-1.5 p-2.5 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control font-bold"
+                        >
+                          <ArrowDownLeft className="w-4 h-4" />
+                          <span>Barang Masuk</span>
+                        </button>
+                        <button
+                          onClick={() => handleOpenAdjust(selectedProduct)}
+                          className="flex items-center justify-center gap-1.5 p-2.5 bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] text-[#252922] rounded-control font-bold"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          <span>Opname / Koreksi</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {drawerTab === 'mutations' && (
+                  <div className="space-y-3">
+                    <h4 className="font-extrabold text-[#252922]">Riwayat Mutasi Stok Terakhir</h4>
+                    <div className="space-y-2">
+                      <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] text-xs space-y-1">
+                        <div className="flex justify-between font-bold text-[#252922]">
+                          <span className="text-[#16845B]">+ Penerimaan Supplier</span>
+                          <span>20 Okt 2026</span>
+                        </div>
+                        <p className="text-[11px] text-[#625D53]">+100 Sak via PO-20261020-01</p>
+                      </div>
+                      <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] text-xs space-y-1">
+                        <div className="flex justify-between font-bold text-[#252922]">
+                          <span className="text-[#C62828]">- Pengiriman Proyek</span>
+                          <span>20 Okt 2026</span>
+                        </div>
+                        <p className="text-[11px] text-[#625D53]">-30 Sak ke Proyek Ruko Sentosa</p>
+                      </div>
+                      <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] text-xs space-y-1">
+                        <div className="flex justify-between font-bold text-[#252922]">
+                          <span className="text-blue-700">~ Penyesuaian Fisik</span>
+                          <span>18 Okt 2026</span>
+                        </div>
+                        <p className="text-[11px] text-[#625D53]">-2 Sak akibat kerusakan kemasan</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {drawerTab === 'pricing' && (
+                  <div className="space-y-3">
+                    <h4 className="font-extrabold text-[#252922]">Konversi & Tingkat Harga Multi-Satuan</h4>
+                    <div className="bg-white border border-[#DEDCCF] rounded-card overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
+                          <tr>
+                            <th className="py-2 px-3">Satuan</th>
+                            <th className="py-2 px-3 text-center">Faktor</th>
+                            <th className="py-2 px-3 text-right">Harga Beli</th>
+                            <th className="py-2 px-3 text-right">Harga Jual</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#DEDCCF]">
+                          {selectedProduct.units && selectedProduct.units.length > 0 ? (
+                            selectedProduct.units.map((u, idx) => (
+                              <tr key={idx}>
+                                <td className="py-2 px-3 font-bold">{u.unitName}</td>
+                                <td className="py-2 px-3 text-center font-mono">1x</td>
+                                <td className="py-2 px-3 text-right text-[#625D53]">{formatRupiah(u.buyPrice || 0)}</td>
+                                <td className="py-2 px-3 text-right font-black text-[#16845B]">{formatRupiah(u.sellPrice || 0)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="py-2 px-3 font-bold">{selectedProduct.baseUnit || 'Pcs'}</td>
+                              <td className="py-2 px-3 text-center font-mono">1x</td>
+                              <td className="py-2 px-3 text-right text-[#625D53]">Rp 0</td>
+                              <td className="py-2 px-3 text-right font-black text-[#16845B]">Rp 0</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {drawerTab === 'edit' && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      alert(`Data produk "${selectedProduct.name}" berhasil diperbarui!`);
+                      setSelectedProduct(null);
+                    }}
+                    className="space-y-3"
+                  >
+                    <div>
+                      <label className="font-bold text-[#252922] block mb-1">Nama Material *</label>
+                      <input
+                        type="text"
+                        defaultValue={selectedProduct.name}
+                        required
+                        className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-semibold"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="font-bold text-[#252922] block mb-1">SKU *</label>
+                        <input
+                          type="text"
+                          defaultValue={selectedProduct.sku}
+                          required
+                          className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-bold text-[#252922] block mb-1">Satuan Dasar</label>
+                        <input
+                          type="text"
+                          defaultValue={selectedProduct.baseUnit || 'Pcs'}
+                          className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#252922] block mb-1">Minimum Stok Pengingat</label>
+                      <input
+                        type="number"
+                        defaultValue={selectedProduct.minStockBase || 10}
+                        className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                      />
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control font-extrabold text-xs shadow-xs"
+                      >
+                        Simpan Perubahan
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-4 border-t border-[#DEDCCF] bg-[#F7F4ED] flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteConfirmProduct(selectedProduct);
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-bold text-[#C62828] hover:bg-red-50 p-2 rounded-control transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Hapus Material</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProduct(null)}
+                  className="px-4 py-2 bg-white border border-[#DEDCCF] text-xs font-bold text-[#252922] rounded-control hover:bg-[#ECEAE2]"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

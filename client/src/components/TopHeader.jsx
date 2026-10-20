@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search,
   Barcode,
@@ -25,6 +26,7 @@ export default function TopHeader({
 }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const navigate = useNavigate();
 
   const notificationsRef = useRef(null);
   const profileRef = useRef(null);
@@ -104,24 +106,25 @@ export default function TopHeader({
         <div className="relative flex items-center">
           <Search className="w-4 h-4 text-[#8C877D] absolute left-3.5 pointer-events-none" />
           <input
+            id="global-search-input"
             type="text"
             placeholder={
               activeTab === 'pos'
-                ? 'Cari nama barang, merek, atau kode SKU...'
+                ? 'Cari nama barang, merek, atau kode SKU (Tekan Ctrl+K)...'
                 : activeTab === 'debts'
-                ? 'Cari nama mandor, proyek, atau nomor transaksi...'
+                ? 'Cari nama mandor, proyek, atau nomor transaksi (Tekan Ctrl+K)...'
                 : activeTab === 'inventory'
-                ? 'Cari barang, merek, atau kategori...'
+                ? 'Cari barang, merek, atau kategori (Tekan Ctrl+K)...'
                 : activeTab === 'reports'
-                ? 'Cari barang, transaksi, atau laporan...'
-                : 'Cari data di sistem...'
+                ? 'Cari barang, transaksi, atau laporan (Tekan Ctrl+K)...'
+                : 'Cari data di sistem (Tekan Ctrl+K)...'
             }
             value={globalSearch || ''}
             onChange={(e) => setGlobalSearch && setGlobalSearch(e.target.value)}
-            className="w-full pl-10 pr-12 py-2 text-xs font-semibold bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:outline-none focus:border-[#234536] focus:bg-white text-[#252922] placeholder-[#8C877D] transition"
+            className="w-full pl-10 pr-16 py-2 text-xs font-semibold bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:outline-none focus:border-[#234536] focus:bg-white text-[#252922] placeholder-[#8C877D] transition"
           />
           <div className="absolute right-3 px-1.5 py-0.5 rounded bg-white border border-[#DEDCCF] text-[10px] font-mono text-[#8C877D] font-medium shadow-2xs">
-            F4
+            Ctrl+K
           </div>
         </div>
       </div>
@@ -137,9 +140,6 @@ export default function TopHeader({
             >
               <Barcode className="w-4 h-4 text-[#234536]" />
               <span>Scan Barcode</span>
-              <span className="text-[10px] bg-white border border-[#DEDCCF] px-1 rounded font-mono text-[#8C877D]">
-                F3
-              </span>
             </button>
 
             <button
@@ -303,6 +303,7 @@ export default function TopHeader({
                   onClick={() => {
                     logout();
                     setShowProfileMenu(false);
+                    navigate('/login');
                   }}
                   className="w-full flex items-center justify-center gap-2 py-1.5 text-xs font-bold text-[#C62828] hover:bg-red-50 rounded-control transition"
                 >

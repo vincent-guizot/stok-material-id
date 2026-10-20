@@ -88,7 +88,7 @@ export default function HelpCenterPage() {
     },
     {
       q: 'Cara melakukan penjualan dan mencetak nota?',
-      a: 'Pilih barang dari katalog Kasir Penjualan untuk memasukkan ke keranjang, lalu tekan F2 atau tombol "Lanjut ke Pembayaran". Pilih metode tunai/transfer/kasbon, masukkan nominal bayar, lalu klik "Selesaikan Transaksi (F5)". Anda dapat mencetak nota thermal atau faktur jalan.',
+      a: 'Pilih barang dari katalog Kasir Penjualan untuk memasukkan ke keranjang, lalu tekan F10 atau tombol "Lanjut ke Pembayaran". Pilih metode tunai/transfer/kasbon, masukkan nominal bayar, lalu klik "Selesaikan Transaksi (F10)". Anda dapat mencetak nota thermal atau faktur jalan.',
     },
     {
       q: 'Bagaimana cara mencatat kasbon mandor?',
@@ -102,6 +102,21 @@ export default function HelpCenterPage() {
       q: 'Apakah bisa export data ke Excel?',
       a: 'Ya, seluruh data produk, transaksi, buku kasbon mandor, dan supplier dapat diekspor langsung ke format Excel (.xlsx) dengan menekan tombol "Export Data".',
     },
+  ];
+
+  const shortcuts = [
+    { key: 'F1', desc: 'Kasir Penjualan (POS)' },
+    { key: 'F2', desc: 'Buku Kasbon Mandor' },
+    { key: 'F3', desc: 'Stok & Barang Masuk' },
+    { key: 'F4', desc: 'Laporan Keuangan' },
+    { key: 'F5', desc: 'Master Data Produk' },
+    { key: 'F6', desc: 'Data Mandor' },
+    { key: 'F7', desc: 'Data Supplier' },
+    { key: 'F8', desc: 'Pengaturan Toko & Pajak' },
+    { key: 'F9', desc: 'Pusat Bantuan' },
+    { key: 'F10', desc: 'Pembayaran / Selesaikan Transaksi' },
+    { key: 'Ctrl+K', desc: 'Fokus Pencarian Global' },
+    { key: 'Esc', desc: 'Batal / Kembali ke Kasir' },
   ];
 
   return (
@@ -255,6 +270,42 @@ export default function HelpCenterPage() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Keyboard Shortcuts Cheat Sheet */}
+      <div className="bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⌨️</span>
+            <div>
+              <h3 className="font-extrabold text-sm text-[#252922]">
+                Daftar Tombol Pintas Keyboard (Shortcuts)
+              </h3>
+              <p className="text-[11px] text-[#625D53]">
+                Akses cepat semua fungsi menu tanpa perlu menyentuh mouse.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs text-[#234536] font-bold bg-[#F7F4ED] px-2.5 py-1 rounded-full border border-[#DEDCCF]">
+            12 Pintasan Aktif
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-1">
+          {shortcuts.map((sc) => (
+            <div
+              key={sc.key}
+              className="p-2.5 rounded-control bg-[#F7F4ED]/60 border border-[#DEDCCF] flex items-center justify-between gap-2 hover:bg-[#F7F4ED] transition"
+            >
+              <span className="text-xs text-[#252922] font-semibold truncate">
+                {sc.desc}
+              </span>
+              <kbd className="px-2 py-0.5 rounded bg-white border border-[#DEDCCF] text-xs font-mono font-black text-[#234536] shadow-2xs shrink-0">
+                {sc.key}
+              </kbd>
+            </div>
+          ))}
         </div>
       </div>
 

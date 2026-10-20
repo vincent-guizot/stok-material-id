@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api.js';
 import { formatRupiah } from '../utils/formatters.js';
@@ -16,7 +17,7 @@ import {
   Search,
   RotateCcw,
   Edit2,
-  MoreHorizontal,
+  Trash2,
   X,
   CheckCircle2,
   Image as ImageIcon,
@@ -25,19 +26,30 @@ import {
   Percent,
 } from 'lucide-react';
 
-export default function MasterDataPage({ subTab = 'products', setSubTab }) {
+export default function MasterDataPage({ subTab, setSubTab }) {
   const queryClient = useQueryClient();
-  const [localTab, setLocalTab] = useState(subTab || 'products');
-  const activeTabKey = subTab || localTab;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const [localTab, setLocalTab] = useState(urlTab || subTab || 'products');
+  const activeTabKey = urlTab || subTab || localTab;
 
   const handleTabChange = (tabId) => {
     setLocalTab(tabId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tabId);
+      return next;
+    });
     if (setSubTab) setSubTab(tabId);
   };
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [deleteConfirmProduct, setDeleteConfirmProduct] = useState(null);
+  const [deletedProductIds, setDeletedProductIds] = useState(new Set());
   const [formTab, setFormTab] = useState('basic'); // 'basic' | 'price' | 'units' | 'other'
 
   // Form states for Tambah Produk
@@ -109,11 +121,70 @@ export default function MasterDataPage({ subTab = 'products', setSubTab }) {
     setProdSku(`${prefix}-${rand}`);
   };
 
+  const handleOpenAdd = () => {
+    resetForm();
+    setSelectedProduct(null);
+    setIsEditMode(true);
+    setIsAddDrawerOpen(true);
+  };
+
+  const handleRowClick = (product) => {
+    setSelectedProduct(product);
+    setProdName(product.name);
+    setProdSku(product.sku);
+    setProdCatId(product.categoryId || '');
+    setProdBaseUnit(product.baseUnit || 'Pcs');
+    setProdBuyPrice(product.units?.[0]?.buyPrice || '');
+    setProdSellPrice(product.units?.[0]?.sellPrice || '');
+    setProdMinStock(product.minStockBase || '10');
+    setProdInitialStock(product.currentStockBase || '100');
+    setProdDesc('');
+    setIsEditMode(false);
+    setIsAddDrawerOpen(true);
+  };
+
+  const handleEditClick = (product, e) => {
+    if (e) e.stopPropagation();
+    setSelectedProduct(product);
+    setProdName(product.name);
+    setProdSku(product.sku);
+    setProdCatId(product.categoryId || '');
+    setProdBaseUnit(product.baseUnit || 'Pcs');
+    setProdBuyPrice(product.units?.[0]?.buyPrice || '');
+    setProdSellPrice(product.units?.[0]?.sellPrice || '');
+    setProdMinStock(product.minStockBase || '10');
+    setProdInitialStock(product.currentStockBase || '100');
+    setProdDesc('');
+    setIsEditMode(true);
+    setIsAddDrawerOpen(true);
+  };
+
+  const handleDeleteClick = (product, e) => {
+    if (e) e.stopPropagation();
+    setDeleteConfirmProduct(product);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteConfirmProduct) return;
+    setDeletedProductIds((prev) => new Set(prev).add(deleteConfirmProduct.id));
+    if (selectedProduct?.id === deleteConfirmProduct.id) {
+      setIsAddDrawerOpen(false);
+      setSelectedProduct(null);
+    }
+    setDeleteConfirmProduct(null);
+  };
+
   const handleCreateProductSubmit = (e) => {
     e.preventDefault();
     setFormError(null);
     if (!prodName || !prodSku) {
       setFormError('Nama produk dan SKU wajib diisi.');
+      return;
+    }
+
+    if (isEditMode && selectedProduct) {
+      alert(`Data produk "${prodName}" berhasil diperbarui!`);
+      setIsAddDrawerOpen(false);
       return;
     }
 
@@ -226,7 +297,7 @@ export default function MasterDataPage({ subTab = 'products', setSubTab }) {
           </button>
 
           <button
-            onClick={() => setIsAddDrawerOpen(true)}
+            onClick={handleOpenAdd}
             className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -344,9 +415,8 @@ export default function MasterDataPage({ subTab = 'products', setSubTab }) {
             </div>
           </div>
 
-          {/* Main Table & Add Product Drawer */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <div className={`${isAddDrawerOpen ? 'lg:col-span-7' : 'lg:col-span-12'} bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden`}>
+          {/* Main Table (Full Width) */}
+          <div className="w-full bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
@@ -370,92 +440,99 @@ export default function MasterDataPage({ subTab = 'products', setSubTab }) {
                           Memuat master data produk...
                         </td>
                       </tr>
-                    ) : products.length === 0 ? (
+                    ) : products.filter((p) => !deletedProductIds.has(p.id)).length === 0 ? (
                       <tr>
                         <td colSpan={10} className="py-12 text-center text-xs text-[#8C877D]">
                           Belum ada data produk material.
                         </td>
                       </tr>
                     ) : (
-                      products.map((p, idx) => {
-                        const primaryUnit = p.units?.[p.units.length - 1] || p.units?.[0] || {};
-                        const isOutOfStock = p.currentStockBase <= 0;
-                        const isLow = p.isLowStock;
+                      products
+                        .filter((p) => !deletedProductIds.has(p.id))
+                        .map((p, idx) => {
+                          const primaryUnit = p.units?.[p.units.length - 1] || p.units?.[0] || {};
+                          const isOutOfStock = p.currentStockBase <= 0;
+                          const isLow = p.isLowStock;
 
-                        const status = isOutOfStock
-                          ? 'habis'
-                          : isLow
-                          ? 'menipis'
-                          : 'aktif';
+                          const status = isOutOfStock
+                            ? 'habis'
+                            : isLow
+                            ? 'menipis'
+                            : 'aktif';
 
-                        return (
-                          <tr key={p.id} className="hover:bg-[#F7F4ED]/50 transition">
-                            <td className="py-3 px-3 text-[#8C877D] font-medium">{idx + 1}</td>
-                            <td className="py-3 px-3">
-                              <div className="flex items-center gap-2.5">
-                                <MaterialImage name={p.name} sku={p.sku} className="w-8 h-8 shrink-0" />
-                                <div className="font-extrabold text-xs text-[#252922]">{p.name}</div>
-                              </div>
-                            </td>
-                            <td className="py-3 px-3 font-mono text-[11px] text-[#8C877D]">{p.sku}</td>
-                            <td className="py-3 px-3 text-[#625D53] font-medium">
-                              {p.category?.name || 'Material Bangunan'}
-                            </td>
-                            <td className="py-3 px-3 text-[#625D53] font-medium">
-                              {p.name.includes('Gresik')
-                                ? 'Semen Gresik'
-                                : p.name.includes('Roda')
-                                ? 'Tiga Roda'
-                                : p.name.includes('Hebel')
-                                ? 'Citicon'
-                                : p.name.includes('Besi')
-                                ? 'KS'
-                                : p.name.includes('Dulux')
-                                ? 'Dulux'
-                                : 'Standard'}
-                            </td>
-                            <td className="py-3 px-3 text-center font-bold text-[#252922]">
-                              {primaryUnit.unitName || p.baseUnit}
-                            </td>
-                            <td className="py-3 px-3 text-right font-black text-[#252922]">
-                              {formatRupiah(primaryUnit.sellPrice || 0)}
-                            </td>
-                            <td className="py-3 px-3 text-center font-black">
-                              <span
-                                className={
-                                  isOutOfStock
-                                    ? 'text-[#C62828]'
-                                    : isLow
-                                    ? 'text-[#D97706]'
-                                    : 'text-[#16845B]'
-                                }
-                              >
-                                {p.currentStockBase}
-                              </span>
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <StatusBadge status={status} />
-                            </td>
-                            <td className="py-3 px-3 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => {
-                                    setProdName(p.name);
-                                    setProdSku(p.sku);
-                                    setIsAddDrawerOpen(true);
-                                  }}
-                                  className="p-1 hover:bg-slate-200 rounded text-[#234536] transition"
+                          return (
+                            <tr
+                              key={p.id}
+                              onClick={() => handleRowClick(p)}
+                              className="hover:bg-[#F7F4ED]/60 transition cursor-pointer"
+                            >
+                              <td className="py-3 px-3 text-[#8C877D] font-medium">{idx + 1}</td>
+                              <td className="py-3 px-3">
+                                <div className="flex items-center gap-2.5">
+                                  <MaterialImage name={p.name} sku={p.sku} className="w-8 h-8 shrink-0" />
+                                  <div className="font-extrabold text-xs text-[#252922]">{p.name}</div>
+                                </div>
+                              </td>
+                              <td className="py-3 px-3 font-mono text-[11px] text-[#8C877D]">{p.sku}</td>
+                              <td className="py-3 px-3 text-[#625D53] font-medium">
+                                {p.category?.name || 'Material Bangunan'}
+                              </td>
+                              <td className="py-3 px-3 text-[#625D53] font-medium">
+                                {p.name.includes('Gresik')
+                                  ? 'Semen Gresik'
+                                  : p.name.includes('Roda')
+                                  ? 'Tiga Roda'
+                                  : p.name.includes('Hebel')
+                                  ? 'Citicon'
+                                  : p.name.includes('Besi')
+                                  ? 'KS'
+                                  : p.name.includes('Dulux')
+                                  ? 'Dulux'
+                                  : 'Standard'}
+                              </td>
+                              <td className="py-3 px-3 text-center font-bold text-[#252922]">
+                                {primaryUnit.unitName || p.baseUnit}
+                              </td>
+                              <td className="py-3 px-3 text-right font-black text-[#252922]">
+                                {formatRupiah(primaryUnit.sellPrice || 0)}
+                              </td>
+                              <td className="py-3 px-3 text-center font-black">
+                                <span
+                                  className={
+                                    isOutOfStock
+                                      ? 'text-[#C62828]'
+                                      : isLow
+                                      ? 'text-[#D97706]'
+                                      : 'text-[#16845B]'
+                                  }
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button className="p-1 hover:bg-slate-200 rounded text-[#8C877D] transition">
-                                  <MoreHorizontal className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
+                                  {p.currentStockBase}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <StatusBadge status={status} />
+                              </td>
+                              <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    onClick={(e) => handleEditClick(p, e)}
+                                    title="Edit Produk"
+                                    className="p-1.5 hover:bg-slate-200 rounded text-[#234536] transition"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => handleDeleteClick(p, e)}
+                                    title="Hapus Produk"
+                                    className="p-1.5 hover:bg-red-50 rounded text-[#C62828] transition"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
                     )}
                   </tbody>
                 </table>
@@ -473,251 +550,332 @@ export default function MasterDataPage({ subTab = 'products', setSubTab }) {
               </div>
             </div>
 
-            {/* Tambah Produk Drawer */}
-            {isAddDrawerOpen && (
-              <div className="lg:col-span-5 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-[#DEDCCF]">
-                  <h3 className="font-extrabold text-sm text-[#252922]">Tambah Produk</h3>
-                  <button
-                    onClick={() => setIsAddDrawerOpen(false)}
-                    className="text-[#8C877D] hover:text-[#252922] p-1 rounded"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="flex border-b border-[#DEDCCF] gap-1 text-xs">
-                  {[
-                    { id: 'basic', label: 'Informasi Dasar' },
-                    { id: 'price', label: 'Harga & Stok' },
-                    { id: 'units', label: 'Satuan & Konversi' },
-                    { id: 'other', label: 'Lainnya' },
-                  ].map((t) => (
+          {/* Slide-over Right Drawer: Tambah / Edit / Detail Produk */}
+          {isAddDrawerOpen && (
+            <div className="fixed inset-0 z-50 overflow-hidden">
+              <div
+                className="fixed inset-0 bg-[#252922]/50 backdrop-blur-xs transition-opacity duration-300"
+                onClick={() => setIsAddDrawerOpen(false)}
+              />
+              <div className="fixed inset-y-0 right-0 max-w-full flex pl-10 pointer-events-none">
+                <div className="w-screen max-w-lg bg-white shadow-2xl border-l border-[#DEDCCF] pointer-events-auto flex flex-col h-full animate-in slide-in-from-right duration-300">
+                  <div className="flex items-center justify-between p-4 border-b border-[#DEDCCF] bg-[#F7F4ED]">
+                    <div>
+                      <h3 className="font-extrabold text-sm text-[#252922]">
+                        {isEditMode
+                          ? selectedProduct
+                            ? `Edit Produk: ${selectedProduct.name}`
+                            : 'Tambah Produk Baru'
+                          : `Detail Produk: ${selectedProduct?.name}`}
+                      </h3>
+                      {selectedProduct && (
+                        <p className="text-[11px] font-mono text-[#8C877D]">SKU: {selectedProduct.sku}</p>
+                      )}
+                    </div>
                     <button
-                      key={t.id}
-                      onClick={() => setFormTab(t.id)}
-                      className={`py-1.5 px-2.5 font-bold border-b-2 transition ${
-                        formTab === t.id
-                          ? 'border-[#234536] text-[#234536]'
-                          : 'border-transparent text-[#625D53] hover:text-[#252922]'
-                      }`}
+                      onClick={() => setIsAddDrawerOpen(false)}
+                      className="text-[#8C877D] hover:text-[#252922] p-1.5 rounded-control hover:bg-stone-200 transition"
                     >
-                      {t.label}
+                      <X className="w-4 h-4" />
                     </button>
-                  ))}
-                </div>
-
-                {formError && (
-                  <div className="p-2.5 bg-red-50 text-[#C62828] text-xs font-bold rounded-control border border-red-200">
-                    {formError}
                   </div>
-                )}
 
-                <form onSubmit={handleCreateProductSubmit} className="space-y-3.5 text-xs">
-                  {formTab === 'basic' && (
-                    <>
-                      <div className="p-4 rounded-card border-2 border-dashed border-[#DEDCCF] bg-[#F7F4ED]/50 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center text-[#8C877D]">
-                            <ImageIcon className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="font-bold text-[#252922]">Upload Foto Produk</div>
-                            <div className="text-[10px] text-[#8C877D]">PNG/JPG, maks 2MB</div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => alert('Pilih berkas foto material bangunan')}
-                          className="px-3 py-1.5 rounded-control bg-white border border-[#DEDCCF] font-bold text-xs hover:bg-[#F7F4ED] transition"
-                        >
-                          Pilih Gambar
-                        </button>
-                      </div>
+                  <div className="flex border-b border-[#DEDCCF] px-4 gap-1 text-xs bg-white">
+                    {[
+                      { id: 'basic', label: 'Informasi Dasar' },
+                      { id: 'price', label: 'Harga & Stok' },
+                      { id: 'units', label: 'Satuan & Konversi' },
+                      { id: 'other', label: 'Lainnya' },
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setFormTab(t.id)}
+                        className={`py-3 px-3 font-bold border-b-2 transition ${
+                          formTab === t.id
+                            ? 'border-[#234536] text-[#234536]'
+                            : 'border-transparent text-[#625D53] hover:text-[#252922]'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
 
-                      <div>
-                        <label className="font-bold text-[#252922] block mb-1">Nama Produk *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Contoh: Semen Portland 50kg"
-                          value={prodName}
-                          onChange={(e) => setProdName(e.target.value)}
-                          className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-semibold text-[#252922]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="font-bold text-[#252922] block mb-1">SKU / Kode Produk *</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            required
-                            placeholder="Contoh: SMN-PRT-50"
-                            value={prodSku}
-                            onChange={(e) => setProdSku(e.target.value)}
-                            className="flex-1 p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-mono font-bold text-[#252922]"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleGenerateSku}
-                            className="px-3 py-2 bg-white border border-[#DEDCCF] rounded-control font-bold hover:bg-[#F7F4ED] transition"
-                          >
-                            Generate
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Kategori *</label>
-                          <select
-                            value={prodCatId}
-                            onChange={(e) => setProdCatId(e.target.value)}
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#252922]"
-                          >
-                            <option value="">Pilih Kategori</option>
-                            {categories.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Merek</label>
-                          <select
-                            value={prodBrand}
-                            onChange={(e) => setProdBrand(e.target.value)}
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#252922]"
-                          >
-                            <option value="">Pilih Merek</option>
-                            <option value="indocement">Tiga Roda</option>
-                            <option value="semen-gresik">Semen Gresik</option>
-                            <option value="citicon">Citicon</option>
-                            <option value="rucika">Rucika</option>
-                            <option value="dulux">Dulux</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Satuan Utama *</label>
-                          <select
-                            value={prodBaseUnit}
-                            onChange={(e) => setProdBaseUnit(e.target.value)}
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#252922]"
-                          >
-                            <option value="Pcs">Pcs</option>
-                            <option value="Sak">Sak</option>
-                            <option value="Meter">Meter</option>
-                            <option value="Batang">Batang</option>
-                            <option value="Kaleng">Kaleng</option>
-                            <option value="m3">m³ (Kubik)</option>
-                            <option value="Kg">Kg</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Berat / Isi (Opsional)</label>
-                          <input
-                            type="text"
-                            placeholder="Contoh: 50 Kg"
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="font-bold text-[#252922] block mb-1">Deskripsi Produk</label>
-                        <textarea
-                          rows={3}
-                          placeholder="Contoh: Semen Portland kualitas tinggi untuk konstruksi rumah..."
-                          value={prodDesc}
-                          onChange={(e) => setProdDesc(e.target.value)}
-                          className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  {formTab === 'price' && (
-                    <>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Harga Beli (Modal)</label>
-                          <input
-                            type="number"
-                            placeholder="58000"
-                            value={prodBuyPrice}
-                            onChange={(e) => setProdBuyPrice(e.target.value)}
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Harga Jual Kasir</label>
-                          <input
-                            type="number"
-                            placeholder="68000"
-                            value={prodSellPrice}
-                            onChange={(e) => setProdSellPrice(e.target.value)}
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#234536]"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Stok Awal</label>
-                          <input
-                            type="number"
-                            value={prodInitialStock}
-                            onChange={(e) => setProdInitialStock(e.target.value)}
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="font-bold text-[#252922] block mb-1">Peringatan Stok Minimum</label>
-                          <input
-                            type="number"
-                            value={prodMinStock}
-                            onChange={(e) => setProdMinStock(e.target.value)}
-                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {(formTab === 'units' || formTab === 'other') && (
-                    <div className="p-4 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] text-[#625D53] text-center">
-                      Fitur konversi satuan multi-tingkat otomatis terkonfigurasi pada tab ini saat produk disimpan.
+                  {formError && (
+                    <div className="m-4 p-2.5 bg-red-50 text-[#C62828] text-xs font-bold rounded-control border border-red-200">
+                      {formError}
                     </div>
                   )}
 
-                  <div className="pt-3 border-t border-[#DEDCCF] flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsAddDrawerOpen(false)}
-                      className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold text-[#252922] hover:bg-[#F7F4ED]"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={createProductMutation.isPending}
-                      className="px-5 py-2 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold flex items-center gap-2 shadow-xs transition"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{createProductMutation.isPending ? 'Menyimpan...' : 'Simpan Produk'}</span>
-                    </button>
-                  </div>
-                </form>
+                  <form onSubmit={handleCreateProductSubmit} className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+                    {formTab === 'basic' && (
+                      <>
+                        <div className="p-4 rounded-card border-2 border-dashed border-[#DEDCCF] bg-[#F7F4ED]/50 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-stone-100 flex items-center justify-center text-[#8C877D]">
+                              <ImageIcon className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="font-bold text-[#252922]">Upload Foto Produk</div>
+                              <div className="text-[10px] text-[#8C877D]">PNG/JPG, maks 2MB</div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => alert('Pilih berkas foto material bangunan')}
+                            className="px-3 py-1.5 rounded-control bg-white border border-[#DEDCCF] font-bold text-xs hover:bg-[#F7F4ED] transition"
+                          >
+                            Pilih Gambar
+                          </button>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-[#252922] block mb-1">Nama Produk *</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Contoh: Semen Portland 50kg"
+                            value={prodName}
+                            onChange={(e) => setProdName(e.target.value)}
+                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-semibold text-[#252922]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-[#252922] block mb-1">SKU / Kode Produk *</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              required
+                              placeholder="Contoh: SMN-PRT-50"
+                              value={prodSku}
+                              onChange={(e) => setProdSku(e.target.value)}
+                              className="flex-1 p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-mono font-bold text-[#252922]"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleGenerateSku}
+                              className="px-3 py-2 bg-white border border-[#DEDCCF] rounded-control font-bold hover:bg-[#F7F4ED] transition"
+                            >
+                              Generate
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Kategori *</label>
+                            <select
+                              value={prodCatId}
+                              onChange={(e) => setProdCatId(e.target.value)}
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#252922]"
+                            >
+                              <option value="">Pilih Kategori</option>
+                              {categories.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Merek</label>
+                            <select
+                              value={prodBrand}
+                              onChange={(e) => setProdBrand(e.target.value)}
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#252922]"
+                            >
+                              <option value="">Pilih Merek</option>
+                              <option value="indocement">Tiga Roda</option>
+                              <option value="semen-gresik">Semen Gresik</option>
+                              <option value="citicon">Citicon</option>
+                              <option value="rucika">Rucika</option>
+                              <option value="dulux">Dulux</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Satuan Utama *</label>
+                            <select
+                              value={prodBaseUnit}
+                              onChange={(e) => setProdBaseUnit(e.target.value)}
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#252922]"
+                            >
+                              <option value="Pcs">Pcs</option>
+                              <option value="Sak">Sak</option>
+                              <option value="Meter">Meter</option>
+                              <option value="Batang">Batang</option>
+                              <option value="Kaleng">Kaleng</option>
+                              <option value="m3">m³ (Kubik)</option>
+                              <option value="Kg">Kg</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Berat / Isi (Opsional)</label>
+                            <input
+                              type="text"
+                              placeholder="Contoh: 50 Kg"
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-[#252922] block mb-1">Deskripsi Produk</label>
+                          <textarea
+                            rows={3}
+                            placeholder="Contoh: Semen Portland kualitas tinggi untuk konstruksi rumah..."
+                            value={prodDesc}
+                            onChange={(e) => setProdDesc(e.target.value)}
+                            className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {formTab === 'price' && (
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Harga Beli (Modal)</label>
+                            <input
+                              type="number"
+                              placeholder="58000"
+                              value={prodBuyPrice}
+                              onChange={(e) => setProdBuyPrice(e.target.value)}
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Harga Jual Kasir</label>
+                            <input
+                              type="number"
+                              placeholder="68000"
+                              value={prodSellPrice}
+                              onChange={(e) => setProdSellPrice(e.target.value)}
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#234536]"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Stok Awal</label>
+                            <input
+                              type="number"
+                              value={prodInitialStock}
+                              onChange={(e) => setProdInitialStock(e.target.value)}
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-bold text-[#252922] block mb-1">Peringatan Stok Minimum</label>
+                            <input
+                              type="number"
+                              value={prodMinStock}
+                              onChange={(e) => setProdMinStock(e.target.value)}
+                              className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {(formTab === 'units' || formTab === 'other') && (
+                      <div className="p-4 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] text-[#625D53] text-center">
+                        Fitur konversi satuan multi-tingkat otomatis terkonfigurasi pada tab ini saat produk disimpan.
+                      </div>
+                    )}
+
+                    <div className="pt-3 border-t border-[#DEDCCF] flex items-center justify-between">
+                      {selectedProduct ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteConfirmProduct(selectedProduct);
+                          }}
+                          className="flex items-center gap-1.5 text-xs font-bold text-[#C62828] hover:bg-red-50 p-2 rounded-control transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span>Hapus Produk</span>
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddDrawerOpen(false)}
+                          className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold text-[#252922] hover:bg-[#F7F4ED]"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={createProductMutation.isPending}
+                          className="px-5 py-2 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold flex items-center gap-2 shadow-xs transition"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>
+                            {createProductMutation.isPending
+                              ? 'Menyimpan...'
+                              : isEditMode && selectedProduct
+                              ? 'Perbarui Produk'
+                              : 'Simpan Produk'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Modal: Konfirmasi Hapus Master Data Produk */}
+          {deleteConfirmProduct && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#252922]/60 backdrop-blur-xs">
+              <div className="bg-white rounded-card max-w-md w-full p-6 shadow-modal border border-[#DEDCCF] space-y-4 animate-in fade-in zoom-in-95">
+                <div className="flex items-center gap-3 pb-3 border-b border-[#DEDCCF]">
+                  <div className="w-10 h-10 rounded-full bg-red-100 text-[#C62828] flex items-center justify-center flex-shrink-0">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-[#252922]">Hapus Master Data Produk?</h3>
+                    <p className="text-xs text-[#625D53]">Data produk akan dihapus dari katalog master data.</p>
+                  </div>
+                </div>
+
+                <div className="text-xs text-[#252922] bg-[#F7F4ED] p-3 rounded-control border border-[#DEDCCF] space-y-1">
+                  <div>Produk yang akan dihapus:</div>
+                  <div className="font-extrabold text-sm text-[#234536]">{deleteConfirmProduct.name}</div>
+                  <div className="text-[#625D53]">SKU: {deleteConfirmProduct.sku}</div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmProduct(null)}
+                    className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED] text-xs text-[#252922]"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    className="px-5 py-2 rounded-control bg-[#C62828] hover:bg-[#b02222] text-white font-extrabold text-xs shadow-xs flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Ya, Hapus Produk</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 

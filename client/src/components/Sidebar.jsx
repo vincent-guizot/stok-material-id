@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ShoppingCart,
   BookOpen,
@@ -22,6 +23,11 @@ export default function Sidebar({
   isOpen = false,
   onClose,
 }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname.replace(/^\//, '').split('/')[0];
+  const effectiveActiveTab = activeTab || (currentPath === '' ? 'pos' : currentPath);
+
   const navItems = [
     {
       id: 'pos',
@@ -54,28 +60,37 @@ export default function Sidebar({
       id: 'master',
       label: 'Master Data',
       icon: Database,
+      shortcut: 'F5',
       defaultSubTab: 'products',
     },
     {
       id: 'mandor',
       label: 'Data Mandor',
       icon: Users,
+      shortcut: 'F6',
     },
     {
       id: 'suppliers',
       label: 'Data Supplier',
       icon: Truck,
+      shortcut: 'F7',
     },
     {
       id: 'settings',
       label: 'Pengaturan',
       icon: Settings,
+      shortcut: 'F8',
       defaultSubTab: 'general',
     },
   ];
 
   const handleSelectNav = (item) => {
-    setActiveTab(item.id);
+    if (setActiveTab) {
+      setActiveTab(item.id);
+    }
+    const targetPath = item.id === 'pos' ? '/pos' : `/${item.id}`;
+    const targetSearch = item.defaultSubTab ? `?tab=${item.defaultSubTab}` : '';
+    navigate(targetPath + targetSearch);
     if (item.defaultSubTab && setSubTab) {
       setSubTab(item.defaultSubTab);
     }
@@ -91,7 +106,8 @@ export default function Sidebar({
         <div
           className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
           onClick={() => {
-            setActiveTab('pos');
+            if (setActiveTab) setActiveTab('pos');
+            navigate('/pos');
             if (onClose) onClose();
           }}
         >
@@ -131,7 +147,10 @@ export default function Sidebar({
       <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = activeTab === item.id;
+          const isActive =
+            effectiveActiveTab === item.id ||
+            (item.id === 'pos' && (effectiveActiveTab === '' || effectiveActiveTab === '/')) ||
+            (item.id === 'debts' && effectiveActiveTab === 'mandor');
 
           return (
             <button
@@ -175,10 +194,11 @@ export default function Sidebar({
         })}
 
         {/* Dedicated Checkout indicator when in checkout mode */}
-        {activeTab === 'checkout' && (
+        {effectiveActiveTab === 'checkout' && (
           <button
             onClick={() => {
-              setActiveTab('checkout');
+              if (setActiveTab) setActiveTab('checkout');
+              navigate('/checkout');
               if (onClose) onClose();
             }}
             className="w-full flex items-center justify-between px-3 py-2.5 rounded-control text-xs font-bold bg-[#234536] text-white shadow-sm"
@@ -188,7 +208,7 @@ export default function Sidebar({
               <span>Pembayaran</span>
             </div>
             <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-white/20 text-white">
-              F5
+              F10
             </span>
           </button>
         )}
@@ -211,17 +231,29 @@ export default function Sidebar({
 
           <button
             onClick={() => {
-              setActiveTab('help');
+              if (setActiveTab) setActiveTab('help');
+              navigate('/help');
               if (onClose) onClose();
             }}
-            className={`w-full py-1.5 px-3 rounded-control text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
-              activeTab === 'help'
+            className={`w-full py-1.5 px-3 rounded-control text-xs font-bold border transition flex items-center justify-between gap-1.5 ${
+              effectiveActiveTab === 'help'
                 ? 'bg-[#234536] text-white border-[#234536]'
                 : 'bg-white text-[#252922] border-[#DEDCCF] hover:bg-[#F7F4ED]'
             }`}
           >
-            <HelpCircle className="w-3.5 h-3.5" />
-            <span>Pusat Bantuan</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Pusat Bantuan</span>
+            </div>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium shrink-0 ${
+                effectiveActiveTab === 'help'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#F7F4ED] text-[#8C877D] border border-[#DEDCCF]'
+              }`}
+            >
+              F9
+            </span>
           </button>
         </div>
       </div>

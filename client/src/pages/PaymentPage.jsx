@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api.js';
 import { useCartStore } from '../store/useCartStore.js';
@@ -22,6 +23,8 @@ import {
 } from 'lucide-react';
 
 export default function PaymentPage({ onBackToPOS }) {
+  const navigate = useNavigate();
+  const handleBackToPOS = onBackToPOS || (() => navigate('/pos'));
   const queryClient = useQueryClient();
   const {
     items,
@@ -170,7 +173,7 @@ export default function PaymentPage({ onBackToPOS }) {
   // Keyboard shortcut F5 to submit
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'F5') {
+      if (e.key === 'F10' || e.key === 'F5' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
         e.preventDefault();
         handleCheckout();
       }
@@ -190,7 +193,7 @@ export default function PaymentPage({ onBackToPOS }) {
           Silakan pilih barang material terlebih dahulu dari katalog kasir.
         </p>
         <button
-          onClick={onBackToPOS}
+          onClick={handleBackToPOS}
           className="w-full py-2.5 px-4 rounded-control bg-[#234536] text-white text-xs font-bold hover:bg-[#1c372b] transition flex items-center justify-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -327,7 +330,7 @@ export default function PaymentPage({ onBackToPOS }) {
 
             <div className="pt-4 border-t border-[#DEDCCF] mt-4 flex items-center justify-between">
               <button
-                onClick={onBackToPOS}
+                onClick={handleBackToPOS}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -571,12 +574,12 @@ export default function PaymentPage({ onBackToPOS }) {
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>
-                  {isSubmitting ? 'Memproses Transaksi...' : 'Selesaikan Transaksi (F5)'}
+                  {isSubmitting ? 'Memproses Transaksi...' : 'Selesaikan Transaksi (F10)'}
                 </span>
               </button>
 
               <button
-                onClick={onBackToPOS}
+                onClick={handleBackToPOS}
                 className="w-full py-2.5 px-4 rounded-control bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] text-[#252922] font-bold text-xs transition flex items-center justify-center gap-2"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -593,7 +596,7 @@ export default function PaymentPage({ onBackToPOS }) {
           transaction={successTransaction}
           onClose={() => {
             setSuccessTransaction(null);
-            onBackToPOS();
+            handleBackToPOS();
           }}
         />
       )}
