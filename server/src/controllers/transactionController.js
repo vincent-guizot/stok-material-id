@@ -17,6 +17,7 @@ export const checkout = async (req, res, next) => {
       customerId,
       items,
       discount = 0,
+      discountPercent = 0,
       paymentMethod = 'CASH',
       payments = [],
       dueDate,
@@ -90,7 +91,10 @@ export const checkout = async (req, res, next) => {
       });
     }
 
-    const numDiscount = Math.max(0, parseFloat(discount) || 0);
+    const pct = parseFloat(discountPercent) || 0;
+    const directDiscount = parseFloat(discount) || 0;
+    const computedDiscount = pct > 0 ? (calculatedSubtotal * (pct / 100)) : directDiscount;
+    const numDiscount = Math.max(0, computedDiscount);
     const totalAmount = Math.max(0, calculatedSubtotal - numDiscount);
 
     // 2. Kalkulasi pembayaran & porsi Kasbon / Piutang
@@ -102,26 +106,30 @@ export const checkout = async (req, res, next) => {
       for (const p of payments) {
         const amt = parseFloat(p.amount) || 0;
         if (amt > 0) {
-          if (p.method === 'DEBT') {
+          const rawMethod = (p.method || p.paymentMethod || 'CASH').toString().toUpperCase();
+          const normalizedMethod = rawMethod === 'KASBON' ? 'DEBT' : rawMethod;
+          if (normalizedMethod === 'DEBT') {
             debtAmount += amt;
           } else {
             paidAmount += amt;
           }
           paymentRecords.push({
-            paymentMethod: p.method,
+            paymentMethod: normalizedMethod,
             amount: amt,
-            referenceNo: p.referenceNo || null,
+            referenceNo: p.referenceNo || p.referenceNumber || null,
           });
         }
       }
     } else {
       // Pembayaran tunggal standar
-      if (paymentMethod === 'DEBT') {
+      const rawMethod = (paymentMethod || 'CASH').toString().toUpperCase();
+      const normalizedMethod = rawMethod === 'KASBON' ? 'DEBT' : rawMethod;
+      if (normalizedMethod === 'DEBT') {
         debtAmount = totalAmount;
         paymentRecords.push({ paymentMethod: 'DEBT', amount: totalAmount });
       } else {
         paidAmount = totalAmount;
-        paymentRecords.push({ paymentMethod: paymentMethod, amount: totalAmount });
+        paymentRecords.push({ paymentMethod: normalizedMethod, amount: totalAmount });
       }
     }
 

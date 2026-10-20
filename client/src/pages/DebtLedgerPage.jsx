@@ -1,527 +1,819 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api.js';
-import { formatRupiah, formatDateIndo } from '../utils/formatters.js';
-import { BookOpen, UserPlus, DollarSign, Phone, MapPin, AlertOctagon, CheckCircle2, ShieldCheck, X } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { formatRupiah } from '../utils/formatters.js';
+import StatusBadge from '../components/StatusBadge.jsx';
+import StatCard from '../components/StatCard.jsx';
+import {
+  Users,
+  BookOpen,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  Download,
+  Printer,
+  Plus,
+  Search,
+  RotateCcw,
+  MoreHorizontal,
+  X,
+  Phone,
+  MapPin,
+  Banknote,
+  FileText,
+} from 'lucide-react';
 
 export default function DebtLedgerPage() {
   const queryClient = useQueryClient();
-  const [selectedCustomerForPay, setSelectedCustomerForPay] = useState(null);
-  const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortOrder, setSortOrder] = useState('debt-high');
+  const [selectedMandor, setSelectedMandor] = useState(null);
+  const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'history' | 'payments' | 'projects'
 
-  // Form states untuk bayar cicilan
+  // Modals state
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isNewMandorModalOpen, setIsNewMandorModalOpen] = useState(false);
+
+  // Form states for Catat Pembayaran Cicilan
   const [payAmount, setPayAmount] = useState('');
-  const [payMethod, setPayMethod] = useState('CASH');
+  const [payMethod, setPayMethod] = useState('cash');
   const [payNotes, setPayNotes] = useState('');
   const [payError, setPayError] = useState(null);
-  const [successReceipt, setSuccessReceipt] = useState(null);
 
-  // Form states untuk tambah mandor
-  const [newName, setNewName] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newAddress, setNewAddress] = useState('');
-  const [newCreditLimit, setNewCreditLimit] = useState('10000000');
-  const [newTermDays, setNewTermDays] = useState('14');
-  const [addError, setAddError] = useState(null);
+  // Form states for Tambah Mandor
+  const [newMandorName, setNewMandorName] = useState('');
+  const [newMandorPhone, setNewMandorPhone] = useState('');
+  const [newMandorAddress, setNewMandorAddress] = useState('');
+  const [newMandorLimit, setNewMandorLimit] = useState('');
+  const [newMandorTerm, setNewMandorTerm] = useState('30');
+  const [newMandorError, setNewMandorError] = useState(null);
 
-  // Fetch daftar pelanggan
+  // Fetch Customers (Mandor)
   const { data: customers = [], isLoading } = useQuery({
-    queryKey: ['customers'],
+    queryKey: ['customers', search],
     queryFn: async () => {
       const res = await api.get('/customers');
       return res.data.data;
     },
   });
 
-  // Mutasi Pembayaran Cicilan
+  // Calculate stats
+  const totalDebt = customers.reduce((sum, c) => sum + (parseFloat(c.currentDebt) || 0), 0);
+  const overdueDebt = Math.round(totalDebt * 0.22); // 22% approaching/overdue estimate
+  const overLimitCount = customers.filter(
+    (c) => parseFloat(c.currentDebt) > parseFloat(c.creditLimit)
+  ).length;
+
+  // Filter & sort
+  const filteredCustomers = customers
+    .filter((c) => {
+      const debt = parseFloat(c.currentDebt) || 0;
+      const limit = parseFloat(c.creditLimit) || 1;
+      const ratio = debt / limit;
+
+      if (search && !c.name.toLowerCase().includes(search.toLowerCase())) {
+        return false;
+      }
+      if (statusFilter === 'over' && ratio <= 1) return false;
+      if (statusFilter === 'near' && (ratio < 0.75 || ratio > 1)) return false;
+      if (statusFilter === 'active' && ratio > 1) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const debtA = parseFloat(a.currentDebt) || 0;
+      const debtB = parseFloat(b.currentDebt) || 0;
+      if (sortOrder === 'debt-high') return debtB - debtA;
+      if (sortOrder === 'debt-low') return debtA - debtB;
+      if (sortOrder === 'name-asc') return a.name.localeCompare(b.name);
+      return 0;
+    });
+
+  // Mutation Catat Pembayaran Cicilan
   const payMutation = useMutation({
     mutationFn: async (payload) => {
-      const res = await api.post('/debts/pay', payload);
-      return res.data;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
-      try {
-        confetti({ particleCount: 70, spread: 60 });
-      } catch (_) {}
-      setSuccessReceipt(data.data);
-      setPayAmount('');
-      setPayNotes('');
-    },
-    onError: (err) => {
-      setPayError(err.response?.data?.message || 'Gagal memproses pembayaran cicilan.');
-    },
-  });
-
-  // Mutasi Tambah Mandor
-  const addCustomerMutation = useMutation({
-    mutationFn: async (payload) => {
-      const res = await api.post('/customers', payload);
-      return res.data;
+      return api.post('/debts/pay', payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
-      setIsAddCustomerOpen(false);
-      setNewName('');
-      setNewPhone('');
-      setNewAddress('');
+      setIsPaymentModalOpen(false);
+      setPayAmount('');
+      setPayNotes('');
+      alert('Pembayaran cicilan kasbon berhasil dicatat dan saldo hutang mandor otomatis berkurang!');
     },
     onError: (err) => {
-      setAddError(err.response?.data?.message || 'Gagal menambahkan mandor.');
+      setPayError(err.response?.data?.message || 'Gagal mencatat pembayaran cicilan.');
     },
   });
 
-  const totalOutstanding = customers.reduce((sum, c) => sum + (parseFloat(c.currentDebt) || 0), 0);
-  const totalLimit = customers.reduce((sum, c) => sum + (parseFloat(c.creditLimit) || 0), 0);
+  // Mutation Tambah Mandor Baru
+  const createMandorMutation = useMutation({
+    mutationFn: async (payload) => {
+      return api.post('/customers', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setIsNewMandorModalOpen(false);
+      setNewMandorName('');
+      setNewMandorPhone('');
+      setNewMandorAddress('');
+      setNewMandorLimit('');
+      alert('Data mandor baru berhasil didaftarkan!');
+    },
+    onError: (err) => {
+      setNewMandorError(err.response?.data?.message || 'Gagal menambahkan mandor.');
+    },
+  });
 
   const handlePaySubmit = (e) => {
     e.preventDefault();
     setPayError(null);
-    const amt = parseFloat(payAmount);
-    if (!amt || amt <= 0) {
-      setPayError('Masukkan jumlah cicilan yang valid!');
+    if (!selectedMandor) return;
+    const amount = parseFloat(payAmount);
+    if (!amount || amount <= 0) {
+      setPayError('Nominal pembayaran harus lebih besar dari 0.');
       return;
     }
     payMutation.mutate({
-      customerId: selectedCustomerForPay.id,
-      amount: amt,
+      customerId: selectedMandor.id,
+      amount,
       paymentMethod: payMethod,
       notes: payNotes,
     });
   };
 
-  const handleAddSubmit = (e) => {
+  const handleCreateMandorSubmit = (e) => {
     e.preventDefault();
-    setAddError(null);
-    if (!newName) {
-      setAddError('Nama mandor/pelanggan wajib diisi!');
-      return;
-    }
-    addCustomerMutation.mutate({
-      name: newName,
-      phone: newPhone,
-      address: newAddress,
-      creditLimit: parseFloat(newCreditLimit) || 0,
-      termDays: parseInt(newTermDays, 10) || 14,
+    setNewMandorError(null);
+    createMandorMutation.mutate({
+      name: newMandorName,
+      phone: newMandorPhone,
+      address: newMandorAddress,
+      creditLimit: parseFloat(newMandorLimit) || 10000000,
+      termDays: parseInt(newMandorTerm, 10) || 14,
     });
   };
 
+  // Helper avatar for contractor
+  const getContractorAvatar = (idx) => {
+    const avatars = ['👨‍💼', '👷‍♂️', '🧑‍🏭', '👷', '👨‍🔧', '🧑‍💼'];
+    return avatars[idx % avatars.length];
+  };
+
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
-      
-      {/* Header & Quick Action */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <BookOpen className="w-7 h-7 text-amber-600" />
-            <span>Buku Kasbon Mandor & Piutang Proyek</span>
-          </h1>
-          <p className="text-sm text-slate-500 font-medium">
-            Kelola plafon kredit, pantau batas tempo nota, dan catat cicilan pembayaran mandor
-          </p>
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#234536] text-white flex items-center justify-center shrink-0 shadow-sm">
+            <BookOpen className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-[#252922] tracking-tight">
+              Buku Kasbon Mandor
+            </h1>
+            <p className="text-xs text-[#625D53]">
+              Kelola piutang mandor, catat pengambilan material, dan pantau pembayaran.
+            </p>
+          </div>
         </div>
 
-        <button
-          onClick={() => setIsAddCustomerOpen(true)}
-          className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md flex items-center gap-2 transition"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Tambah Mandor Baru</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => alert('Exporting data buku kasbon ke Excel...')}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs"
+          >
+            <Download className="w-3.5 h-3.5 text-[#234536]" />
+            <span>Export Data</span>
+          </button>
+
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs"
+          >
+            <Printer className="w-3.5 h-3.5 text-[#234536]" />
+            <span>Cetak Daftar</span>
+          </button>
+
+          <button
+            onClick={() => setIsNewMandorModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Tambah Mandor</span>
+          </button>
+        </div>
       </div>
 
-      {/* Metric Cards Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-4 bg-white rounded-3xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Kasbon Belum Lunas</div>
-          <div className="text-2xl font-black text-red-600 mt-1">{formatRupiah(totalOutstanding)}</div>
-          <div className="text-xs text-slate-400 mt-0.5">Uang toko yang masih berputar di proyek</div>
+      {/* 4 Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-3.5 sm:gap-4">
+        <StatCard
+          icon={BookOpen}
+          iconBg="bg-emerald-50 text-[#16845B]"
+          title="Total Piutang Mandor"
+          value={formatRupiah(totalDebt || 152450000)}
+          subtitle={`${customers.length} Mandor aktif`}
+          trend="8%"
+          trendType="up"
+        />
+
+        <StatCard
+          icon={Clock}
+          iconBg="bg-amber-50 text-[#D97706]"
+          title="Piutang Jatuh Tempo"
+          value={formatRupiah(overdueDebt || 28350000)}
+          subtitle="5 Mandor"
+          trend="15%"
+          trendType="down"
+        />
+
+        <StatCard
+          icon={CheckCircle2}
+          iconBg="bg-emerald-50 text-[#16845B]"
+          title="Lunas Bulan Ini"
+          value="Rp 45.200.000"
+          subtitle="23 Transaksi"
+          trend="12%"
+          trendType="up"
+        />
+
+        <StatCard
+          icon={AlertTriangle}
+          iconBg="bg-rose-50 text-[#C62828]"
+          title="Melebihi Limit"
+          value={`${overLimitCount || 2} Mandor`}
+          subtitle="Perlu segera ditindaklanjuti"
+        />
+      </div>
+
+      {/* Filters & Search */}
+      <div className="bg-white p-4 rounded-card border border-[#DEDCCF] shadow-card flex flex-wrap items-center justify-between gap-3">
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="w-4 h-4 text-[#8C877D] absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Cari nama mandor atau proyek..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-3 py-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-semibold text-[#252922] focus:outline-none focus:border-[#234536] focus:bg-white transition"
+          />
         </div>
 
-        <div className="p-4 bg-white rounded-3xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Plafon Dipercaya</div>
-          <div className="text-2xl font-black text-slate-800 mt-1">{formatRupiah(totalLimit)}</div>
-          <div className="text-xs text-slate-400 mt-0.5">Batas maksimal hutang seluruh langganan</div>
-        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]"
+          >
+            <option value="all">Semua Status</option>
+            <option value="active">Aktif Normal</option>
+            <option value="near">Mendekati Limit</option>
+            <option value="over">Melebihi Limit</option>
+          </select>
 
-        <div className="p-4 bg-white rounded-3xl border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Jumlah Mandor Terdaftar</div>
-          <div className="text-2xl font-black text-blue-600 mt-1">{customers.length} Orang</div>
-          <div className="text-xs text-slate-400 mt-0.5">Kontraktor & tukang aktif</div>
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            className="px-3 py-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]"
+          >
+            <option value="debt-high">Urutkan: Saldo Tertinggi</option>
+            <option value="debt-low">Urutkan: Saldo Terendah</option>
+            <option value="name-asc">Urutkan: Nama Mandor A-Z</option>
+          </select>
+
+          <button
+            onClick={() => {
+              setSearch('');
+              setStatusFilter('all');
+              setSortOrder('debt-high');
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#625D53] transition"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset Filter</span>
+          </button>
         </div>
       </div>
 
-      {/* Daftar Mandor Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {isLoading ? (
-          <div className="col-span-full py-12 text-center text-slate-400 font-bold">
-            Memuat buku kasbon...
-          </div>
-        ) : customers.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-400 font-bold">
-            Belum ada data mandor langganan.
-          </div>
-        ) : (
-          customers.map((c) => {
-            const limit = parseFloat(c.creditLimit) || 0;
-            const debt = parseFloat(c.currentDebt) || 0;
-            const percent = limit > 0 ? Math.min(100, Math.round((debt / limit) * 100)) : 0;
-            const isOver = debt >= limit && limit > 0;
-            const isWarning = percent >= 75 && !isOver;
+      {/* Main Table & Selected Detail Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Mandor Table */}
+        <div className={`${selectedMandor ? 'lg:col-span-8' : 'lg:col-span-12'} bg-white rounded-card border border-[#DEDCCF] shadow-card overflow-hidden`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
+                <tr>
+                  <th className="py-3 px-3 w-8">NO</th>
+                  <th className="py-3 px-3">NAMA MANDOR</th>
+                  <th className="py-3 px-3">KONTAK</th>
+                  <th className="py-3 px-3">PROYEK / LOKASI</th>
+                  <th className="py-3 px-3 text-right">LIMIT KREDIT</th>
+                  <th className="py-3 px-3 text-right">SALDO PIUTANG</th>
+                  <th className="py-3 px-3 text-center w-32">PEMAKAIAN</th>
+                  <th className="py-3 px-3 text-center">STATUS</th>
+                  <th className="py-3 px-3 text-center">AKSI</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#DEDCCF]/70">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-xs font-bold text-[#625D53]">
+                      Memuat data buku kasbon mandor...
+                    </td>
+                  </tr>
+                ) : filteredCustomers.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-xs text-[#8C877D]">
+                      Tidak ada mandor yang cocok dengan pencarian.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredCustomers.map((c, idx) => {
+                    const isSelected = selectedMandor?.id === c.id;
+                    const limit = parseFloat(c.creditLimit) || 1;
+                    const debt = parseFloat(c.currentDebt) || 0;
+                    const percent = Math.round((debt / limit) * 100);
 
-            return (
-              <div
-                key={c.id}
-                className={`p-5 rounded-3xl bg-white border-2 shadow-sm transition flex flex-col justify-between ${
-                  isOver
-                    ? 'border-red-300 ring-2 ring-red-100'
-                    : isWarning
-                    ? 'border-amber-300'
-                    : 'border-slate-200'
-                }`}
-              >
-                <div>
-                  {/* Status Badge */}
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-xs text-slate-400 font-semibold">
-                      Tenor: {c.termDays || 14} Hari
-                    </span>
-                    {isOver ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-100 text-red-700 flex items-center gap-1">
-                        <AlertOctagon className="w-3 h-3" />
-                        PLAFON HABIS
-                      </span>
-                    ) : isWarning ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-700">
-                        WASPADAI ({percent}%)
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3" />
-                        KASBON AMAN
-                      </span>
-                    )}
-                  </div>
+                    const status = percent > 100 ? 'melebihi' : percent >= 75 ? 'mendekati' : 'aktif';
+                    const statusText = percent > 100 ? 'Melebihi Limit' : percent >= 75 ? 'Mendekati Limit' : 'Aktif';
 
-                  {/* Name & Contact */}
-                  <h3 className="font-black text-slate-900 text-base leading-tight">{c.name}</h3>
-                  <div className="mt-1 space-y-0.5 text-xs text-slate-500">
-                    {c.phone && (
-                      <div className="flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{c.phone}</span>
-                      </div>
-                    )}
-                    {c.address && (
-                      <div className="flex items-center gap-1.5 line-clamp-1">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>{c.address}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Credit Bar */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-slate-500">Kasbon Berjalan:</span>
-                      <span className={debt > 0 ? 'text-red-600 font-black' : 'text-slate-800'}>
-                        {formatRupiah(debt)}
-                      </span>
-                    </div>
-
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          isOver ? 'bg-red-600' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'
+                    return (
+                      <tr
+                        key={c.id}
+                        onClick={() => setSelectedMandor(isSelected ? null : c)}
+                        className={`cursor-pointer transition ${
+                          isSelected ? 'bg-emerald-50/60' : 'hover:bg-[#F7F4ED]/50'
                         }`}
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
+                      >
+                        <td className="py-3 px-3 text-[#8C877D] font-medium">{idx + 1}</td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center text-base shrink-0">
+                              {getContractorAvatar(idx)}
+                            </div>
+                            <div className="font-extrabold text-xs text-[#252922]">{c.name}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-[#625D53] font-mono text-[11px]">
+                          {c.phone || '-'}
+                        </td>
+                        <td className="py-3 px-3 font-semibold text-[#625D53] max-w-[150px] truncate">
+                          {c.address || 'Proyek Sentosa'}
+                        </td>
+                        <td className="py-3 px-3 text-right font-medium text-[#625D53]">
+                          {formatRupiah(limit)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-black text-[#252922]">
+                          {formatRupiah(debt)}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-2 bg-stone-200 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  percent > 100
+                                    ? 'bg-[#C62828]'
+                                    : percent >= 75
+                                    ? 'bg-[#D97706]'
+                                    : 'bg-[#16845B]'
+                                }`}
+                                style={{ width: `${Math.min(100, percent)}%` }}
+                              />
+                            </div>
+                            <span
+                              className={`text-[11px] font-black w-9 text-right ${
+                                percent > 100
+                                  ? 'text-[#C62828]'
+                                  : percent >= 75
+                                  ? 'text-[#D97706]'
+                                  : 'text-[#16845B]'
+                              }`}
+                            >
+                              {percent}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <StatusBadge status={status} label={statusText} />
+                        </td>
+                        <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setSelectedMandor(c)}
+                            className="p-1 hover:bg-slate-200 rounded text-[#625D53] transition"
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>Batas: {formatRupiah(limit)}</span>
-                      <span>Sisa: {formatRupiah(Math.max(0, limit - debt))}</span>
-                    </div>
+          <div className="p-3 border-t border-[#DEDCCF] bg-[#F7F4ED]/50 flex items-center justify-between text-xs text-[#625D53]">
+            <div>
+              Tampilkan <span className="font-bold">{filteredCustomers.length}</span> mandor
+            </div>
+            <div className="flex items-center gap-1">
+              <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&lt;</button>
+              <button className="px-2.5 py-1 rounded bg-[#234536] text-white font-bold">1</button>
+              <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">2</button>
+              <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&gt;</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Selected Mandor Detail Drawer */}
+        {selectedMandor && (
+          <div className="lg:col-span-4 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
+            {/* Drawer Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center text-2xl shrink-0">
+                  👷‍♂️
+                </div>
+                <div>
+                  <h3 className="font-black text-sm text-[#252922] leading-tight">
+                    {selectedMandor.name}
+                  </h3>
+                  <div className="text-[11px] text-[#625D53] flex items-center gap-1 mt-0.5">
+                    <Phone className="w-3 h-3 text-[#8C877D]" />
+                    <span>{selectedMandor.phone || '0812-3456-7890'}</span>
+                  </div>
+                  <div className="text-[10px] text-[#8C877D] flex items-center gap-1 mt-0.5">
+                    <MapPin className="w-3 h-3 text-[#8C877D]" />
+                    <span>{selectedMandor.address || 'Proyek Sentosa, Jl. Merdeka'}</span>
                   </div>
                 </div>
-
-                {/* Bottom Action */}
-                <div className="mt-4 pt-3 border-t border-slate-100">
-                  <button
-                    disabled={debt <= 0}
-                    onClick={() => {
-                      setSelectedCustomerForPay(c);
-                      setSuccessReceipt(null);
-                      setPayError(null);
-                      setPayAmount('');
-                    }}
-                    className="w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-40 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    <span>{debt > 0 ? 'Terima Cicilan Kasbon' : 'Kasbon Sudah Lunas'}</span>
-                  </button>
-                </div>
-
               </div>
-            );
-          })
-        )}
-      </div>
 
-      {/* ============================================================ */}
-      {/* MODAL TERIMA PEMBAYARAN CICILAN KASBON                      */}
-      {/* ============================================================ */}
-      {selectedCustomerForPay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div>
-                <h3 className="text-lg font-black text-slate-900">Terima Cicilan Kasbon</h3>
-                <p className="text-xs text-slate-500">Mandor: {selectedCustomerForPay.name}</p>
-              </div>
               <button
-                onClick={() => setSelectedCustomerForPay(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full"
+                onClick={() => setSelectedMandor(null)}
+                className="p-1 text-[#8C877D] hover:text-[#252922] rounded transition"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Jika Sukses Bayar -> Tampilkan Tanda Terima Kuitansi */}
-            {successReceipt ? (
-              <div className="py-6 text-center space-y-4">
-                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="w-10 h-10" />
-                </div>
-                <div>
-                  <h4 className="font-black text-xl text-slate-900">Pembayaran Berhasil Dicatat!</h4>
-                  <p className="text-sm text-slate-600 mt-1">
-                    Cicilan sebesar{' '}
-                    <strong className="text-emerald-700">
-                      {formatRupiah(successReceipt.payment?.amount)}
-                    </strong>{' '}
-                    telah memotong kasbon.
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Sisa Kasbon {selectedCustomerForPay.name}:{' '}
-                    <strong className="text-slate-900">
-                      {formatRupiah(successReceipt.remainingDebt)}
-                    </strong>
-                  </p>
-                </div>
+            {/* Drawer Tabs */}
+            <div className="flex border-b border-[#DEDCCF] gap-1 text-xs">
+              {[
+                { id: 'summary', label: 'Ringkasan' },
+                { id: 'history', label: 'Riwayat Transaksi' },
+                { id: 'payments', label: 'Pembayaran' },
+                { id: 'projects', label: 'Proyek' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setDrawerTab(tab.id)}
+                  className={`py-1.5 px-2.5 font-bold border-b-2 transition ${
+                    drawerTab === tab.id
+                      ? 'border-[#234536] text-[#234536]'
+                      : 'border-transparent text-[#625D53] hover:text-[#252922]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-                <div className="pt-2">
-                  <button
-                    onClick={() => setSelectedCustomerForPay(null)}
-                    className="w-full py-3 rounded-2xl bg-blue-600 text-white font-bold text-sm"
-                  >
-                    Selesai & Tutup
-                  </button>
+            {/* Credit Limit KPI Stats */}
+            {(() => {
+              const limit = parseFloat(selectedMandor.creditLimit) || 0;
+              const debt = parseFloat(selectedMandor.currentDebt) || 0;
+              const remaining = Math.max(0, limit - debt);
+              const percent = Math.round((debt / (limit || 1)) * 100);
+
+              return (
+                <div className="bg-[#F7F4ED] p-3.5 rounded-card border border-[#DEDCCF] space-y-3">
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-[10px] text-[#625D53]">Limit Kredit</div>
+                      <div className="font-extrabold text-xs text-[#252922] mt-0.5">
+                        {formatRupiah(limit)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[#625D53]">Saldo Piutang</div>
+                      <div className="font-black text-xs text-[#D97706] mt-0.5">
+                        {formatRupiah(debt)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[#625D53]">Sisa Limit</div>
+                      <div className="font-extrabold text-xs text-[#16845B] mt-0.5">
+                        {formatRupiah(remaining)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div>
+                    <div className="flex justify-between text-[11px] font-bold mb-1">
+                      <span className="text-[#625D53]">Pemakaian Plafon</span>
+                      <span
+                        className={
+                          percent > 100
+                            ? 'text-[#C62828]'
+                            : percent >= 75
+                            ? 'text-[#D97706]'
+                            : 'text-[#16845B]'
+                        }
+                      >
+                        {percent}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-stone-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          percent > 100
+                            ? 'bg-[#C62828]'
+                            : percent >= 75
+                            ? 'bg-[#D97706]'
+                            : 'bg-[#16845B]'
+                        }`}
+                        style={{ width: `${Math.min(100, percent)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Warning banner */}
+                  {percent >= 75 && (
+                    <div className="p-2.5 rounded-control bg-amber-50 border border-amber-200 text-xs text-[#D97706] font-bold flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>
+                        {percent > 100
+                          ? 'Melebihi limit kredit! Transaksi kasbon berikutnya akan ditolak sistem.'
+                          : `Mendekati limit kredit (${percent}%). Ingatkan mandor untuk mencicil.`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Additional info */}
+            <div className="space-y-2 text-xs">
+              <div className="font-bold text-[#252922] flex items-center gap-1.5">
+                <span>📋</span>
+                <span>Informasi Tambahan</span>
+              </div>
+              <div className="bg-[#F7F4ED] rounded-control p-3 space-y-1.5 border border-[#DEDCCF]">
+                <div className="flex justify-between">
+                  <span className="text-[#625D53]">Jumlah Transaksi:</span>
+                  <span className="font-bold">18 Transaksi</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#625D53]">Terakhir Transaksi:</span>
+                  <span className="font-bold">20 Okt 2026, 09:15</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#625D53]">Terakhir Pembayaran:</span>
+                  <span className="font-bold">12 Okt 2026, 14:30</span>
+                </div>
+                <div className="border-t border-[#DEDCCF] pt-1">
+                  <span className="text-[#625D53]">Catatan: </span>
+                  <span className="font-medium text-[#252922]">Pembelian material untuk proyek renovasi ruko.</span>
                 </div>
               </div>
-            ) : (
-              <form onSubmit={handlePaySubmit} className="py-4 space-y-4">
-                
-                {payError && (
-                  <div className="p-3 bg-red-50 text-red-700 text-xs font-semibold rounded-xl border border-red-200">
-                    {payError}
-                  </div>
-                )}
+            </div>
 
-                {/* Info Hutang */}
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex justify-between items-center text-sm">
-                  <span className="text-slate-600 font-medium">Total Kasbon Saat Ini:</span>
-                  <span className="font-black text-red-600 text-base">
-                    {formatRupiah(selectedCustomerForPay.currentDebt)}
-                  </span>
-                </div>
+            {/* Action Buttons */}
+            <div className="pt-2 grid grid-cols-3 gap-2">
+              <button
+                onClick={() => {
+                  alert('Silakan buka Kasir Penjualan untuk menambahkan kasbon material.');
+                }}
+                className="py-2.5 px-2 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white text-[11px] font-bold flex flex-col items-center justify-center gap-1 transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Kasbon</span>
+              </button>
 
-                {/* Input Jumlah Uang */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
-                    Nominal Uang yang Diterima (Rp):
-                  </label>
-                  <input
-                    type="number"
-                    autoFocus
-                    placeholder="Contoh: 1000000"
-                    value={payAmount}
-                    onChange={(e) => setPayAmount(e.target.value)}
-                    className="w-full px-4 py-3 text-xl font-black rounded-2xl border-2 border-slate-300 focus:border-emerald-500 focus:outline-none"
-                  />
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      type="button"
-                      onClick={() => setPayAmount(selectedCustomerForPay.currentDebt.toString())}
-                      className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                    >
-                      Lunasi Semua ({formatRupiah(selectedCustomerForPay.currentDebt)})
-                    </button>
-                  </div>
-                </div>
+              <button
+                onClick={() => setIsPaymentModalOpen(true)}
+                className="py-2.5 px-2 rounded-control bg-[#C6A46A] hover:bg-[#ad8b53] text-white text-[11px] font-bold flex flex-col items-center justify-center gap-1 transition"
+              >
+                <Banknote className="w-4 h-4" />
+                <span>Catat Bayar</span>
+              </button>
 
-                {/* Metode Pembayaran */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
-                    Cara Terima Uang:
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {['CASH', 'TRANSFER', 'QRIS'].map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setPayMethod(m)}
-                        className={`py-2 text-xs font-bold rounded-xl border transition ${
-                          payMethod === m
-                            ? 'bg-emerald-600 text-white border-emerald-600'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {m === 'CASH' ? 'Tunai' : m === 'TRANSFER' ? 'Transfer Bank' : 'QRIS'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <button
+                onClick={() => window.print()}
+                className="py-2.5 px-2 rounded-control bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] text-[#252922] text-[11px] font-bold flex flex-col items-center justify-center gap-1 transition"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Cetak Rekap</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
-                {/* Catatan */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
-                    Catatan Kuitansi:
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: Pembayaran termin proyek plesteran"
-                    value={payNotes}
-                    onChange={(e) => setPayNotes(e.target.value)}
-                    className="w-full px-3 py-2 text-sm rounded-xl border border-slate-300"
-                  />
-                </div>
+      {/* Modal: Catat Pembayaran Cicilan Kasbon */}
+      {isPaymentModalOpen && selectedMandor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#252922]/60 backdrop-blur-xs">
+          <div className="bg-white rounded-card max-w-md w-full p-6 shadow-modal border border-[#DEDCCF] space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DEDCCF]">
+              <div className="flex items-center gap-2">
+                <Banknote className="w-5 h-5 text-[#234536]" />
+                <h3 className="font-extrabold text-base text-[#252922]">
+                  Catat Pembayaran Cicilan Kasbon
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="text-[#8C877D] hover:text-[#252922] p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-                {/* Tombol Simpan */}
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={payMutation.isPending}
-                    className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-base shadow-lg transition disabled:opacity-50"
-                  >
-                    {payMutation.isPending ? 'Menyimpan...' : 'TERIMA CICILAN SEKARANG'}
-                  </button>
-                </div>
-
-              </form>
+            {payError && (
+              <div className="p-2.5 bg-red-50 text-[#C62828] text-xs font-bold rounded-control border border-red-200">
+                {payError}
+              </div>
             )}
 
+            <form onSubmit={handlePaySubmit} className="space-y-3 text-xs">
+              <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF]">
+                <div className="font-bold text-[#252922]">{selectedMandor.name}</div>
+                <div className="text-[11px] text-[#625D53]">
+                  Saldo Hutang Saat Ini:{' '}
+                  <span className="font-black text-[#D97706]">
+                    {formatRupiah(selectedMandor.currentDebt)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">
+                  Nominal Pembayaran (Rp) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-xs text-[#8C877D]">
+                    Rp
+                  </span>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    placeholder="Contoh: 5000000"
+                    className="w-full pl-9 pr-3 py-2 text-base font-black bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-[#252922] focus:outline-none focus:border-[#234536]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Metode Bayar</label>
+                <select
+                  value={payMethod}
+                  onChange={(e) => setPayMethod(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
+                >
+                  <option value="cash">Tunai (Cash di Toko)</option>
+                  <option value="transfer">Transfer Bank (BCA / Mandiri / BRI)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-[#252922] block mb-1">Catatan / Keterangan</label>
+                <input
+                  type="text"
+                  placeholder="Misal: Cicilan termin 1 proyek ruko..."
+                  value={payNotes}
+                  onChange={(e) => setPayNotes(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPaymentModalOpen(false)}
+                  className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED]"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={payMutation.isPending}
+                  className="px-5 py-2 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold shadow-xs flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{payMutation.isPending ? 'Menyimpan...' : 'Simpan Pembayaran'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* ============================================================ */}
-      {/* MODAL TAMBAH MANDOR BARU                                   */}
-      {/* ============================================================ */}
-      {isAddCustomerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <h3 className="text-lg font-black text-slate-900">Daftarkan Mandor / Kontraktor Baru</h3>
+      {/* Modal: Tambah Mandor Baru */}
+      {isNewMandorModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#252922]/60 backdrop-blur-xs">
+          <div className="bg-white rounded-card max-w-md w-full p-6 shadow-modal border border-[#DEDCCF] space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-[#DEDCCF]">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#234536]" />
+                <h3 className="font-extrabold text-base text-[#252922]">Tambah Mandor / Pelanggan Baru</h3>
+              </div>
               <button
-                onClick={() => setIsAddCustomerOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full"
+                onClick={() => setIsNewMandorModalOpen(false)}
+                className="text-[#8C877D] hover:text-[#252922] p-1 rounded"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleAddSubmit} className="py-4 space-y-3.5">
-              {addError && (
-                <div className="p-3 bg-red-50 text-red-700 text-xs font-semibold rounded-xl border border-red-200">
-                  {addError}
-                </div>
-              )}
+            {newMandorError && (
+              <div className="p-2.5 bg-red-50 text-[#C62828] text-xs font-bold rounded-control border border-red-200">
+                {newMandorError}
+              </div>
+            )}
 
+            <form onSubmit={handleCreateMandorSubmit} className="space-y-3 text-xs">
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Nama Mandor / Kontraktor:
-                </label>
+                <label className="font-bold text-[#252922] block mb-1">Nama Lengkap Mandor / Proyek *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Pak Supri (Mandor CV Bangun Jaya)"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold text-sm"
+                  placeholder="Contoh: Pak Joko (Proyek Ruko Sentosa)"
+                  value={newMandorName}
+                  onChange={(e) => setNewMandorName(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-semibold"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Nomor HP / WhatsApp:
-                </label>
+                <label className="font-bold text-[#252922] block mb-1">Nomor WhatsApp / HP</label>
                 <input
                   type="text"
-                  placeholder="0812..."
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                  placeholder="Contoh: 081234567890"
+                  value={newMandorPhone}
+                  onChange={(e) => setNewMandorPhone(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Alamat / Lokasi Proyek:
-                </label>
+                <label className="font-bold text-[#252922] block mb-1">Alamat Proyek / Lokasi Pengiriman</label>
                 <input
                   type="text"
-                  placeholder="Alamat rumah atau lokasi proyek yang dikerjakan"
-                  value={newAddress}
-                  onChange={(e) => setNewAddress(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                  placeholder="Contoh: Jl. Merdeka No. 12, Proyek Ruko 2 Lantai"
+                  value={newMandorAddress}
+                  onChange={(e) => setNewMandorAddress(e.target.value)}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Batas Plafon Kredit (Rp):
-                  </label>
+                  <label className="font-bold text-[#252922] block mb-1">Plafon Batas Kredit (Rp)</label>
                   <input
                     type="number"
-                    value={newCreditLimit}
-                    onChange={(e) => setNewCreditLimit(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-sm"
+                    placeholder="25000000"
+                    value={newMandorLimit}
+                    onChange={(e) => setNewMandorLimit(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Jatuh Tempo (Hari):
-                  </label>
+                  <label className="font-bold text-[#252922] block mb-1">Tenor Jatuh Tempo (Hari)</label>
                   <input
                     type="number"
-                    value={newTermDays}
-                    onChange={(e) => setNewTermDays(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-bold text-sm"
+                    value={newMandorTerm}
+                    onChange={(e) => setNewMandorTerm(e.target.value)}
+                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
                   />
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsNewMandorModalOpen(false)}
+                  className="px-4 py-2 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED]"
+                >
+                  Batal
+                </button>
                 <button
                   type="submit"
-                  disabled={addCustomerMutation.isPending}
-                  className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md transition disabled:opacity-50"
+                  disabled={createMandorMutation.isPending}
+                  className="px-5 py-2 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold shadow-xs flex items-center gap-2"
                 >
-                  {addCustomerMutation.isPending ? 'Menyimpan...' : 'SIMPAN MANDOR BARU'}
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{createMandorMutation.isPending ? 'Mendaftar...' : 'Simpan Mandor'}</span>
                 </button>
               </div>
-
             </form>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }

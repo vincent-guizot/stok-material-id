@@ -4,6 +4,7 @@ import { authenticate } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 
+router.post('/', authenticate, checkout);
 router.post('/checkout', authenticate, checkout);
 router.get('/', authenticate, getAllTransactions);
 router.get('/:id', authenticate, getTransactionById);

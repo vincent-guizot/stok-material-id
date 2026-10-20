@@ -64,6 +64,28 @@ describe('POS Checkout & Konversi Multi-Satuan Test', () => {
     expect(updatedProduct.currentStockBase).toBe(900);
   });
 
+  it('Harus berhasil memproses transaksi via endpoint POST /api/v1/transactions langsung', async () => {
+    const res = await request(app)
+      .post('/api/v1/transactions')
+      .set('Authorization', 'Bearer ' + kasirToken)
+      .send({
+        items: [
+          {
+            productId: testData.product.id,
+            unitId: testData.unitKg.id,
+            qty: 10,
+            unitPrice: 1500,
+          },
+        ],
+        paymentMethod: 'CASH',
+        notes: 'Uji endpoint POST /api/v1/transactions langsung',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.invoiceNumber).toMatch(/^INV-/);
+  });
+
   it('Harus menolak transaksi jika kuantitas barang melebihi sisa stok riil', async () => {
     // Sisa stok saat ini 900 Kg. Kasir mencoba menjual 20 Sak 50kg (= 1.000 Kg) -> Harus ditolak!
     const res = await request(app)

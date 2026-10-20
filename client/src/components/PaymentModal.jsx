@@ -6,7 +6,7 @@ import confetti from 'canvas-confetti';
 import { Banknote, QrCode, FileText, Split, CheckCircle, AlertCircle, X } from 'lucide-react';
 
 export default function PaymentModal({ isOpen, onClose, onSuccess }) {
-  const { items, selectedCustomer, discount, notes, getTotal, getSubtotal, clearCart } = useCartStore();
+  const { items, selectedCustomer, discount, notes, getTotal, clearCart } = useCartStore();
 
   const total = getTotal();
   const [paymentType, setPaymentType] = useState('CASH'); // 'CASH', 'TRANSFER', 'DEBT', 'SPLIT'
@@ -100,7 +100,7 @@ export default function PaymentModal({ isOpen, onClose, onSuccess }) {
           spread: 70,
           origin: { y: 0.6 },
         });
-      } catch (_) {}
+      } catch {}
 
       clearCart();
       onClose();

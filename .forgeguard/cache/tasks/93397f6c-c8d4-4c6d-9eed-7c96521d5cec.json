@@ -1,0 +1,91 @@
+{
+  "version": 2,
+  "session_id": "93397f6c-c8d4-4c6d-9eed-7c96521d5cec",
+  "objective": "Deliver complete StokMaterial.id UI redesign matching 12 design blueprint pages with Forest & Sand palette, zero regressions in server test suites, and clean production build",
+  "profile": "general",
+  "scopes": [
+    "client/index.html",
+    "client/src",
+    "client/tailwind.config.js"
+  ],
+  "resources": [],
+  "semantic": false,
+  "goal": {
+    "metric": "server_and_client_verified_checks",
+    "baseline": "0",
+    "target": "3",
+    "guardrails": [
+      "Zero server test failures (9 of 9 tests passing)",
+      "Zero client build errors",
+      "Zero client lint errors"
+    ],
+    "verifications": [
+      "npm --prefix client run build",
+      "npm --prefix server test",
+      "npm --prefix client run lint"
+    ]
+  },
+  "todos": [
+    {
+      "text": "Implement Forest & Sand design tokens, typography, and shared AppShell",
+      "done": true
+    },
+    {
+      "text": "Implement redesigned POS Cashier and Payment Checkout pages",
+      "done": true
+    },
+    {
+      "text": "Implement redesigned Stok & Barang Masuk and Buku Kasbon Mandor",
+      "done": true
+    },
+    {
+      "text": "Implement redesigned Laporan Keuangan and Financial Analytics",
+      "done": true
+    },
+    {
+      "text": "Implement Master Data, Data Supplier, Pengaturan Sistem, and Pusat Bantuan",
+      "done": true
+    },
+    {
+      "text": "Verify zero lint errors, clean client build, and passing backend test suite",
+      "done": true
+    }
+  ],
+  "acceptance_criteria": [],
+  "confidence": 100,
+  "confidence_history": [
+    98,
+    99,
+    99,
+    100
+  ],
+  "auto_pokes": 3,
+  "poke_instruction": null,
+  "status": "completed",
+  "evidence": [
+    "npm --prefix client run lint: 0 warnings, 0 errors",
+    "npm --prefix client run build: built in 990ms with 0 errors",
+    "npm --prefix server test: 2 test suites passed, 9 of 9 tests passing"
+  ],
+  "evidence_records": [
+    {
+      "summary": "npm --prefix client run lint: 0 warnings, 0 errors",
+      "source": "command:powershell",
+      "artifacts": [],
+      "criteria": []
+    },
+    {
+      "summary": "npm --prefix client run build: built in 990ms with 0 errors",
+      "source": "command:powershell",
+      "artifacts": [],
+      "criteria": []
+    },
+    {
+      "summary": "npm --prefix server test: 2 test suites passed, 9 of 9 tests passing",
+      "source": "command:powershell",
+      "artifacts": [],
+      "criteria": []
+    }
+  ],
+  "blocker": null
+}

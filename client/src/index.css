@@ -2,9 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-100 text-slate-800 antialiased selection:bg-blue-600 selection:text-white;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+@layer base {
+  :root {
+    --font-sans: "Manrope", "Segoe UI", sans-serif;
+    --brand-forest: #234536;
+    --brand-olive: #5F7147;
+    --accent-sand: #C6A46A;
+    --surface-cream: #F7F4ED;
+    --surface: #FFFFFF;
+    --text-primary: #252922;
+    --text-secondary: #625D53;
+    --border: #DEDCCF;
+    --success: #16845B;
+    --warning: #D97706;
+    --danger: #C62828;
+    --info: #3B6E8F;
+    --radius-card: 14px;
+    --radius-control: 10px;
+  }
+
+  body {
+    background-color: var(--surface-cream);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
 }
 
 /* Custom scrollbars */
@@ -13,14 +35,14 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #F7F4ED;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #DEDCCF;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #C6A46A;
 }
 
 /* Print styling for POS Thermal Receipt (80mm) and A5 Invoice */
@@ -42,6 +64,6 @@ body {
     color: black;
   }
   @page {
-    margin: 5mm;
+    margin: 4mm;
   }
 }
