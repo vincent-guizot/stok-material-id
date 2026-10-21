@@ -13,11 +13,15 @@ import {
   Mail,
   Phone,
   Clock,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
 
 export default function HelpCenterPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedFaq, setExpandedFaq] = useState(null);
+  const [selectedGuide, setSelectedGuide] = useState(null);
+  const [activeVideo, setActiveVideo] = useState(null);
 
   const guideCards = [
     {
@@ -148,9 +152,20 @@ export default function HelpCenterPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-24 py-3 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-semibold text-[#252922] focus:outline-none focus:border-[#234536] focus:bg-white transition"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-16 text-xs text-[#8C877D] hover:text-[#252922] font-bold"
+              >
+                Reset
+              </button>
+            )}
             <button
-              onClick={() => alert(`Mencari solusi untuk: "${searchQuery}"`)}
-              className="absolute right-2 px-4 py-1.5 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
+              onClick={() => {
+                const el = document.getElementById('quick-guides-section');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="absolute right-2 px-4 py-1.5 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
             >
               Cari
             </button>
@@ -199,7 +214,7 @@ export default function HelpCenterPage() {
       </div>
 
       {/* Middle Section: Panduan Penggunaan & Video Tutorial */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div id="quick-guides-section" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Panduan Penggunaan (6 cards) */}
         <div className="lg:col-span-7 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
@@ -213,25 +228,32 @@ export default function HelpCenterPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {guideCards.map((g) => (
-              <div
-                key={g.num}
-                onClick={() => alert(`Membuka panduan: ${g.title}`)}
-                className="p-3.5 rounded-card bg-[#F7F4ED]/60 border border-[#DEDCCF] hover:bg-[#F7F4ED] hover:border-[#234536] transition cursor-pointer flex items-start gap-3"
-              >
-                <div className="w-8 h-8 rounded-full bg-[#234536] text-white flex items-center justify-center text-xs font-black shrink-0">
-                  {g.num}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-extrabold text-xs text-[#252922] leading-tight">
-                    {g.title}
+            {guideCards
+              .filter((g) =>
+                searchQuery
+                  ? g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    g.desc.toLowerCase().includes(searchQuery.toLowerCase())
+                  : true
+              )
+              .map((g) => (
+                <div
+                  key={g.num}
+                  onClick={() => setSelectedGuide(g)}
+                  className="p-3.5 rounded-card bg-[#F7F4ED]/60 border border-[#DEDCCF] hover:bg-[#F7F4ED] hover:border-[#234536] transition cursor-pointer flex items-start gap-3"
+                >
+                  <div className="w-8 h-8 rounded-full bg-[#234536] text-white flex items-center justify-center text-xs font-black shrink-0">
+                    {g.num}
                   </div>
-                  <div className="text-[11px] text-[#625D53] mt-1 leading-snug">
-                    {g.desc}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-extrabold text-xs text-[#252922] leading-tight">
+                      {g.title}
+                    </div>
+                    <div className="text-[11px] text-[#625D53] mt-1 leading-snug">
+                      {g.desc}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
 
@@ -248,27 +270,34 @@ export default function HelpCenterPage() {
           </div>
 
           <div className="space-y-2.5">
-            {videos.map((vid, idx) => (
-              <div
-                key={idx}
-                onClick={() => alert(`Memutar video tutorial: ${vid.title}`)}
-                className="p-2.5 rounded-card bg-[#F7F4ED]/50 border border-[#DEDCCF] hover:bg-[#F7F4ED] transition cursor-pointer flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-stone-200 border border-[#DEDCCF] flex items-center justify-center text-[#234536] shrink-0 relative">
-                    <Play className="w-4 h-4 fill-current" />
+            {videos
+              .filter((v) =>
+                searchQuery
+                  ? v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    v.desc.toLowerCase().includes(searchQuery.toLowerCase())
+                  : true
+              )
+              .map((vid, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => setActiveVideo(vid)}
+                  className="p-2.5 rounded-card bg-[#F7F4ED]/50 border border-[#DEDCCF] hover:bg-[#F7F4ED] transition cursor-pointer flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-stone-200 border border-[#DEDCCF] flex items-center justify-center text-[#234536] shrink-0 relative">
+                      <Play className="w-4 h-4 fill-current" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-xs text-[#252922]">{vid.title}</div>
+                      <div className="text-[10px] text-[#625D53] mt-0.5">{vid.desc}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-bold text-xs text-[#252922]">{vid.title}</div>
-                    <div className="text-[10px] text-[#625D53] mt-0.5">{vid.desc}</div>
-                  </div>
-                </div>
 
-                <div className="px-2 py-0.5 rounded bg-white border border-[#DEDCCF] text-[10px] font-bold text-[#625D53] shrink-0 font-mono">
-                  {vid.duration}
+                  <div className="px-2 py-0.5 rounded bg-white border border-[#DEDCCF] text-[10px] font-bold text-[#625D53] shrink-0 font-mono">
+                    {vid.duration}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       </div>
@@ -413,6 +442,86 @@ export default function HelpCenterPage() {
           </div>
         </div>
       </div>
+      {/* Modal Baca Panduan Lengkap */}
+      {selectedGuide && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-card max-w-md w-full p-5 shadow-modal border border-[#DEDCCF] space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{selectedGuide.icon}</span>
+                <h3 className="font-extrabold text-sm text-[#252922]">{selectedGuide.title}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedGuide(null)}
+                className="text-[#8C877D] hover:text-[#252922] transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="text-xs text-[#625D53] space-y-3 leading-relaxed">
+              <p className="font-medium text-[#252922]">{selectedGuide.desc}</p>
+              <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] space-y-2">
+                <div className="font-bold text-[#234536] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#16845B]" />
+                  <span>Petunjuk Langkah Penggunaan:</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1.5 text-[11px] text-[#252922]">
+                  <li>Buka menu terkait dari panel navigasi atau gunakan shortcut keyboard (F1 - F9).</li>
+                  <li>Lakukan pengisian formulir secara lengkap, pastikan kuantitas dan harga telah sesuai.</li>
+                  <li>Tekan tombol Simpan; data akan langsung disinkronkan ke basis data PostgreSQL secara permanen.</li>
+                  <li>Anda dapat mencetak bukti struk / faktur atau mengunduh laporan dalam format Excel (CSV).</li>
+                </ul>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setSelectedGuide(null)}
+                className="px-4 py-1.5 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold text-xs shadow-xs"
+              >
+                Tutup Panduan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Video Player Tutorial */}
+      {activeVideo && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-card max-w-md w-full p-5 shadow-modal border border-[#DEDCCF] space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
+              <div className="flex items-center gap-2">
+                <Video className="w-4 h-4 text-[#234536]" />
+                <h3 className="font-extrabold text-sm text-[#252922]">{activeVideo.title}</h3>
+              </div>
+              <button
+                onClick={() => setActiveVideo(null)}
+                className="text-[#8C877D] hover:text-[#252922] transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="aspect-video bg-stone-900 rounded-control flex flex-col items-center justify-center text-white p-4 relative overflow-hidden shadow-inner">
+              <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-xs border border-white/40 flex items-center justify-center text-white mb-2 animate-pulse">
+                <Play className="w-6 h-6 fill-current ml-0.5" />
+              </div>
+              <div className="font-bold text-xs">{activeVideo.title}</div>
+              <div className="text-[10px] text-stone-400 mt-1">
+                Durasi Video: {activeVideo.duration} • Kualitas Full HD 1080p
+              </div>
+            </div>
+            <p className="text-xs text-[#625D53]">{activeVideo.desc}</p>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setActiveVideo(null)}
+                className="px-4 py-1.5 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold text-xs shadow-xs"
+              >
+                Selesai Menonton
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

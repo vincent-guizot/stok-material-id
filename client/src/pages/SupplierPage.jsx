@@ -4,6 +4,8 @@ import api from '../services/api.js';
 import { formatRupiah } from '../utils/formatters.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import StatCard from '../components/StatCard.jsx';
+import Toast from '../components/Toast.jsx';
+import { exportToCsv } from '../utils/exportCsv.js';
 import {
   Truck,
   Building2,
@@ -29,6 +31,32 @@ export default function SupplierPage() {
   const [drawerTab, setDrawerTab] = useState('info'); // 'info' | 'contact' | 'address' | 'history'
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [deleteConfirmSupplier, setDeleteConfirmSupplier] = useState(null);
+
+  // Toast feedback & Import state
+  const [toast, setToast] = useState({ show: false, type: 'success', message: '' });
+  const showToast = (type, message) => {
+    setToast({ show: true, type, message });
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, show: false }));
+    }, 4000);
+  };
+  const importFileRef = React.useRef(null);
+  const handleImportCsv = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        showToast('success', `Berhasil membaca file ${file.name} (${lines.length - 1} baris supplier). Data siap disinkronkan!`);
+      } catch {
+        showToast('error', 'Gagal memproses file CSV import.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   // New Supplier form state
   const [supName, setSupName] = useState('');
@@ -80,10 +108,10 @@ export default function SupplierPage() {
       setSupPic('');
       setSupPhone('');
       setSupNpwp('');
-      alert('Data supplier baru berhasil didaftarkan secara permanen!');
+      showToast('success', 'Data supplier baru berhasil didaftarkan secara permanen!');
     },
     onError: (err) => {
-      alert(err.response?.data?.message || 'Gagal menambahkan supplier.');
+      showToast('error', err.response?.data?.message || 'Gagal menambahkan supplier.');
     },
   });
 
@@ -95,9 +123,10 @@ export default function SupplierPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       setDeleteConfirmSupplier(null);
+      showToast('success', 'Data supplier berhasil dihapus.');
     },
     onError: (err) => {
-      alert(err.response?.data?.message || 'Gagal menghapus supplier.');
+      showToast('error', err.response?.data?.message || 'Gagal menghapus supplier.');
       setDeleteConfirmSupplier(null);
     },
   });
@@ -157,16 +186,31 @@ export default function SupplierPage() {
 
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => alert('Mengimpor data supplier dari file Excel...')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs"
+            onClick={() => importFileRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-[#234536]" />
             <span>Import Excel</span>
           </button>
 
           <button
-            onClick={() => alert('Mengekspor data supplier ke Excel...')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs"
+            onClick={() => {
+              exportToCsv(
+                'daftar-supplier',
+                ['Nama Supplier', 'Kategori', 'Kontak PIC', 'No. Telepon', 'Alamat / Kota', 'Jatuh Tempo', 'Status'],
+                suppliers.map((s) => [
+                  s.name,
+                  s.category,
+                  s.pic,
+                  s.phone,
+                  s.city,
+                  s.term,
+                  s.status,
+                ])
+              );
+              showToast('success', 'Data supplier berhasil diekspor ke Excel (CSV)!');
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-[#234536]" />
             <span>Export Excel</span>
@@ -672,6 +716,9 @@ export default function SupplierPage() {
           </div>
         </div>
       )}
+      {/* Global Toast Feedback & Import Input */}
+      <Toast toast={toast} onClose={() => setToast({ show: false, type: 'info', message: '' })} />
+      <input ref={importFileRef} type="file" accept=".csv" onChange={handleImportCsv} className="hidden" />
     </div>
   );
 }

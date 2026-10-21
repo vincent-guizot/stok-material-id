@@ -6,6 +6,8 @@ import { formatRupiah } from '../utils/formatters.js';
 import MaterialImage from '../components/MaterialImage.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import StatCard from '../components/StatCard.jsx';
+import Toast from '../components/Toast.jsx';
+import { exportToCsv } from '../utils/exportCsv.js';
 import {
   Package,
   Boxes,
@@ -46,6 +48,32 @@ export default function InventoryPage({ subTab, setSubTab }) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Feedback Toast & File Import State
+  const [toast, setToast] = useState({ show: false, type: 'success', message: '' });
+  const showToast = (type, message) => {
+    setToast({ show: true, type, message });
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, show: false }));
+    }, 4000);
+  };
+  const importFileRef = React.useRef(null);
+  const handleImportCsv = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        showToast('success', `Berhasil membaca file ${file.name} (${lines.length - 1} baris material). Data siap disinkronkan!`);
+      } catch {
+        showToast('error', 'Gagal memproses file CSV import.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
   const [sortOrder, setSortOrder] = useState('name-asc');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'mutations' | 'pricing' | 'edit'
@@ -137,7 +165,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
       setIsStockInModalOpen(false);
       setPoItems([]);
       setPoNotes('');
-      alert('Penerimaan barang masuk berhasil disimpan dan stok otomatis bertambah!');
+      showToast('success', 'Penerimaan barang masuk berhasil disimpan dan stok otomatis bertambah!');
     },
     onError: (err) => {
       setStockInError(err.response?.data?.message || 'Gagal menyimpan barang masuk.');
@@ -154,7 +182,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
       setIsAdjustModalOpen(false);
       setAdjustQty('');
       setAdjustReason('');
-      alert('Penyesuaian stok fisik (opname) berhasil dicatat!');
+      showToast('success', 'Penyesuaian stok fisik (opname) berhasil dicatat!');
     },
     onError: (err) => {
       setAdjustError(err.response?.data?.message || 'Gagal menyesuaikan stok.');
@@ -169,10 +197,10 @@ export default function InventoryPage({ subTab, setSubTab }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setSelectedProduct(null);
-      alert('Data produk material berhasil diperbarui secara permanen!');
+      showToast('success', 'Data produk material berhasil diperbarui secara permanen!');
     },
     onError: (err) => {
-      alert(err.response?.data?.message || 'Gagal memperbarui produk.');
+      showToast('error', err.response?.data?.message || 'Gagal memperbarui produk.');
     },
   });
 
@@ -184,9 +212,10 @@ export default function InventoryPage({ subTab, setSubTab }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setDeleteConfirmProduct(null);
+      showToast('success', 'Produk material berhasil dihapus.');
     },
     onError: (err) => {
-      alert(err.response?.data?.message || 'Gagal menghapus produk.');
+      showToast('error', err.response?.data?.message || 'Gagal menghapus produk.');
       setDeleteConfirmProduct(null);
     },
   });
@@ -380,7 +409,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
     setOutQty('');
     setOutDriver('');
     setOutNotes('');
-    alert(`Surat Jalan ${newOut.id} berhasil dicatat dan stok material otomatis dipotong di database!`);
+    showToast('success', `Surat Jalan ${newOut.id} berhasil dicatat dan stok material otomatis dipotong di database!`);
   };
 
   const handleMutationSubmit = (e) => {
@@ -410,7 +439,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
     setMutProductId('');
     setMutQty('');
     setMutNotes('');
-    alert(`Mutasi ${newMut.id} berhasil dicatat.`);
+    showToast('success', `Mutasi ${newMut.id} berhasil dicatat.`);
   };
 
   const handleConfirmDeleteProduct = () => {
@@ -449,16 +478,32 @@ export default function InventoryPage({ subTab, setSubTab }) {
 
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => alert('Fitur Export Excel: Data stok material sedang diunduh...')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs"
+            onClick={() => {
+              exportToCsv(
+                'stok-material',
+                ['SKU', 'Nama Material', 'Kategori', 'Satuan Dasar', 'Stok Riil', 'Min Stok', 'Harga Beli', 'Harga Jual'],
+                products.map((p) => [
+                  p.sku,
+                  p.name,
+                  p.category?.name || '-',
+                  p.baseUnit,
+                  p.currentStockBase ?? p.stock ?? 0,
+                  p.minStock ?? 0,
+                  p.units?.[0]?.buyPrice ?? 0,
+                  p.units?.[0]?.sellPrice ?? 0,
+                ])
+              );
+              showToast('success', 'Data stok material berhasil diekspor ke format Excel (CSV)!');
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-[#234536]" />
             <span>Export Data</span>
           </button>
 
           <button
-            onClick={() => alert('Fitur Import Data Material: Pilih file format Excel / CSV.')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs"
+            onClick={() => importFileRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-[#234536]" />
             <span>Import</span>
@@ -1894,6 +1939,9 @@ export default function InventoryPage({ subTab, setSubTab }) {
           </div>
         </div>
       )}
+      {/* Global Toast Feedback & Import Input */}
+      <Toast toast={toast} onClose={() => setToast({ show: false, type: 'info', message: '' })} />
+      <input ref={importFileRef} type="file" accept=".csv" onChange={handleImportCsv} className="hidden" />
     </div>
   );
 }

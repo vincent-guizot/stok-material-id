@@ -5,7 +5,6 @@ import {
   LogIn,
   AlertCircle,
 } from 'lucide-react';
-import logoImg from '../assets/logo.png';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -46,7 +45,7 @@ export default function LoginPage() {
       <div className="text-center mb-6">
         <div className="w-16 h-16 bg-[#234536] rounded-2xl mx-auto flex items-center justify-center text-white text-3xl shadow-card mb-3 overflow-hidden">
           <img
-            src={logoImg}
+            src="/02_ikon-aplikasi-full-color.png"
             alt="StokMaterial.id Logo"
             className="w-full h-full object-cover"
             onError={(e) => {

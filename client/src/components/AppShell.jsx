@@ -78,17 +78,13 @@ export default function AppShell({
         navigate('/master');
       } else if (e.key === 'F6') {
         e.preventDefault();
-        if (setActiveTab) setActiveTab('mandor');
-        navigate('/mandor');
-      } else if (e.key === 'F7') {
-        e.preventDefault();
         if (setActiveTab) setActiveTab('suppliers');
         navigate('/suppliers');
-      } else if (e.key === 'F8') {
+      } else if (e.key === 'F7') {
         e.preventDefault();
         if (setActiveTab) setActiveTab('settings');
         navigate('/settings');
-      } else if (e.key === 'F9') {
+      } else if (e.key === 'F8') {
         e.preventDefault();
         if (setActiveTab) setActiveTab('help');
         navigate('/help');
@@ -109,7 +105,14 @@ export default function AppShell({
   const handleSearchChange = setGlobalSearch || setLocalSearch;
 
   const handleOpenBarcodeScanner = () => {
-    alert('Simulasi Barcode Scanner aktif: Gunakan scanner USB/Bluetooth Anda atau tekan Enter pada input SKU.');
+    const input =
+      document.getElementById('global-search-input') ||
+      document.querySelector('input[placeholder*="Cari"]') ||
+      document.querySelector('input[type="search"]');
+    if (input) {
+      input.focus();
+      input.select();
+    }
   };
 
   return (

@@ -38,7 +38,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'mandor',
-        element: <DebtLedgerPage />,
+        element: <Navigate to="/debts" replace />,
       },
       {
         path: 'inventory',

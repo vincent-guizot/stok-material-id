@@ -6,14 +6,12 @@ import {
   Package,
   BarChart3,
   Database,
-  Users,
   Truck,
   Settings,
   HelpCircle,
   CreditCard,
   X,
 } from 'lucide-react';
-import logoImg from '../assets/logo.png';
 
 export default function Sidebar({
   activeTab,
@@ -64,22 +62,16 @@ export default function Sidebar({
       defaultSubTab: 'products',
     },
     {
-      id: 'mandor',
-      label: 'Data Mandor',
-      icon: Users,
-      shortcut: 'F6',
-    },
-    {
       id: 'suppliers',
       label: 'Data Supplier',
       icon: Truck,
-      shortcut: 'F7',
+      shortcut: 'F6',
     },
     {
       id: 'settings',
       label: 'Pengaturan',
       icon: Settings,
-      shortcut: 'F8',
+      shortcut: 'F7',
       defaultSubTab: 'general',
     },
   ];
@@ -113,7 +105,7 @@ export default function Sidebar({
         >
           <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm flex items-center justify-center bg-[#234536] text-white shrink-0">
             <img
-              src={logoImg}
+              src="/02_ikon-aplikasi-full-color.png"
               alt="StokMaterial.id Logo"
               className="w-full h-full object-cover"
               onError={(e) => {
@@ -149,8 +141,7 @@ export default function Sidebar({
           const Icon = item.icon;
           const isActive =
             effectiveActiveTab === item.id ||
-            (item.id === 'pos' && (effectiveActiveTab === '' || effectiveActiveTab === '/')) ||
-            (item.id === 'debts' && effectiveActiveTab === 'mandor');
+            (item.id === 'pos' && (effectiveActiveTab === '' || effectiveActiveTab === '/'));
 
           return (
             <button
@@ -252,7 +243,7 @@ export default function Sidebar({
                   : 'bg-[#F7F4ED] text-[#8C877D] border border-[#DEDCCF]'
               }`}
             >
-              F9
+              F8
             </span>
           </button>
         </div>

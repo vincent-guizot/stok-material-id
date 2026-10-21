@@ -6,6 +6,8 @@ import { formatRupiah } from '../utils/formatters.js';
 import MaterialImage from '../components/MaterialImage.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import StatCard from '../components/StatCard.jsx';
+import Toast from '../components/Toast.jsx';
+import { exportToCsv } from '../utils/exportCsv.js';
 import {
   BarChart3,
   Calendar,
@@ -38,6 +40,15 @@ export default function ReportsPage({ subTab, setSubTab }) {
   const [timeframe, setTimeframe] = useState('month'); // 'day' | 'week' | 'month' | 'year'
   const [reportType, setReportType] = useState('sales');
   const [exportFormat, setExportFormat] = useState('pdf');
+
+  // Toast feedback state
+  const [toast, setToast] = useState({ show: false, type: 'success', message: '' });
+  const showToast = (type, message) => {
+    setToast({ show: true, type, message });
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, show: false }));
+    }, 4000);
+  };
 
   // Fetch report summary
   const { data: summaryData = {} } = useQuery({
@@ -582,13 +593,38 @@ export default function ReportsPage({ subTab, setSubTab }) {
 
                   <button
                     onClick={() => {
-                      if (exportFormat === 'print') {
+                      if (exportFormat === 'pdf' || exportFormat === 'print') {
                         window.print();
                       } else {
-                        alert(`Mengunduh ${reportType.toUpperCase()} dalam format ${exportFormat.toUpperCase()}...`);
+                        if (reportType === 'sales') {
+                          exportToCsv(
+                            'laporan-penjualan-toko',
+                            ['Waktu', 'No. Invoice', 'Pelanggan', 'Kasir', 'Item', 'Subtotal', 'Total', 'Metode'],
+                            salesRecords.map((s) => [s.date, s.invoice, s.customer, s.cashier, s.itemsCount, s.subtotal, s.total, s.method])
+                          );
+                        } else if (reportType === 'purchases') {
+                          exportToCsv(
+                            'laporan-pembelian-distributor',
+                            ['Tanggal', 'No. PO', 'Supplier', 'Item Material', 'Total Nilai', 'Syarat Bayar', 'Status'],
+                            purchaseRecords.map((p) => [p.date, p.poNo, p.supplier, p.items, p.total, p.paymentTerm, p.status])
+                          );
+                        } else if (reportType === 'debts') {
+                          exportToCsv(
+                            'laporan-piutang-mandor',
+                            ['Mandor', 'No. HP', 'Plafon Kredit', 'Total Kasbon', 'Sisa Plafon', 'Jatuh Tempo', 'Status'],
+                            debtReports.map((d) => [d.mandor, d.phone, d.creditLimit, d.currentDebt, d.availableLimit, d.dueDate, d.status])
+                          );
+                        } else {
+                          exportToCsv(
+                            'laporan-stok-valuasi',
+                            ['Kategori Material', 'Jumlah Item SKU', 'Nilai Valuasi Modal'],
+                            valuationByCategory.map((v) => [v.category, v.items, v.value])
+                          );
+                        }
+                        showToast('success', `Laporan ${reportType.toUpperCase()} berhasil diekspor ke Excel (CSV)!`);
                       }
                     }}
-                    className="w-full py-2.5 px-4 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold flex items-center justify-center gap-2 shadow-xs transition"
+                    className="w-full py-2.5 px-4 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
                   >
                     <Download className="w-4 h-4" />
                     <span>Generate & Download Laporan</span>
@@ -615,8 +651,15 @@ export default function ReportsPage({ subTab, setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => alert('Mengunduh rincian penjualan format Excel...')}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
+              onClick={() => {
+                exportToCsv(
+                  'laporan-penjualan-rincian',
+                  ['Waktu', 'No. Invoice', 'Pelanggan', 'Kasir', 'Item', 'Subtotal', 'Total', 'Metode'],
+                  salesRecords.map((s) => [s.date, s.invoice, s.customer, s.cashier, s.itemsCount, s.subtotal, s.total, s.method])
+                );
+                showToast('success', 'Laporan rincian penjualan berhasil diekspor ke Excel (CSV)!');
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Export Laporan Penjualan</span>
@@ -675,8 +718,15 @@ export default function ReportsPage({ subTab, setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => alert('Mengunduh rincian pembelian format Excel...')}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
+              onClick={() => {
+                exportToCsv(
+                  'rekap-pembelian-supplier',
+                  ['Tanggal', 'No. PO', 'Supplier', 'Deskripsi Material', 'Total Nilai', 'Syarat Pembayaran', 'Status'],
+                  purchaseRecords.map((p) => [p.date, p.poNo, p.supplier, p.items, p.total, p.paymentTerm, p.status])
+                );
+                showToast('success', 'Rekap pembelian supplier berhasil diekspor ke Excel (CSV)!');
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export Rekap Pembelian</span>
@@ -737,8 +787,15 @@ export default function ReportsPage({ subTab, setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => alert('Mengekspor laporan buku kasbon mandor...')}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
+              onClick={() => {
+                exportToCsv(
+                  'rekap-piutang-mandor',
+                  ['Nama Mandor', 'No. Telepon', 'Plafon Limit', 'Total Kasbon', 'Sisa Limit', 'Jatuh Tempo', 'Status'],
+                  debtReports.map((d) => [d.mandor, d.phone, d.creditLimit, d.currentDebt, d.availableLimit, d.dueDate, d.status])
+                );
+                showToast('success', 'Laporan piutang mandor berhasil diekspor ke Excel (CSV)!');
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export Piutang Mandor</span>
@@ -803,8 +860,15 @@ export default function ReportsPage({ subTab, setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => alert('Mengekspor laporan stok material ke Excel...')}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs"
+              onClick={() => {
+                exportToCsv(
+                  'valuasi-stok-material',
+                  ['Kategori Material', 'Jumlah Item SKU', 'Nilai Valuasi Modal'],
+                  valuationByCategory.map((v) => [v.category, v.items, v.value])
+                );
+                showToast('success', 'Laporan valuasi stok berhasil diekspor ke Excel (CSV)!');
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Export Laporan Stok</span>
@@ -951,6 +1015,8 @@ export default function ReportsPage({ subTab, setSubTab }) {
           </div>
         </div>
       )}
+      {/* Toast Feedback */}
+      <Toast toast={toast} onClose={() => setToast({ show: false, type: 'info', message: '' })} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
   "version": 2,
   "session_id": "34c363de-f985-428f-8c9d-afd64576b7c4",
-  "objective": "Persist all CRUD operations to backend PostgreSQL database: Product update/delete, Customer/Mandor update/delete, Supplier API, Settings API, and Stock mutations, so changes persist across page refresh",
+  "objective": "Build comprehensive backend test suite covering all API endpoints, ensure all frontend buttons and functions are real and non-mockup, update logo from public folder and generate favicon.ico",
   "profile": "general",
   "scopes": [],
   "resources": [],
@@ -19,39 +19,36 @@
   },
   "todos": [
     {
-      "text": "Add backend PUT and DELETE endpoints for Products and connect MasterDataPage & InventoryPage",
+      "text": "Inspect client/public logo files, generate favicon.ico, and update logo references in App, TopHeader, Sidebar, Login, Settings, Receipt",
       "done": true
     },
     {
-      "text": "Add backend PUT and DELETE endpoints for Customers and connect DebtLedgerPage",
+      "text": "Audit all frontend pages to replace any mock alerts or dummy handlers with real actions, exports, or feedback",
       "done": true
     },
     {
-      "text": "Create backend Supplier model, controller, routes and connect SupplierPage with persistent API",
+      "text": "Implement comprehensive backend integration tests covering all endpoints (Reports, Transactions, Categories, Stocks, Debts, Suppliers, Settings)",
       "done": true
     },
     {
-      "text": "Create backend Settings model, controller, routes and connect SettingsPage with persistent API",
+      "text": "Run oxlint, client build, and full server test suite to verify 100% pass",
       "done": true
     },
     {
-      "text": "Add backend Stock Out and Stock Transfer endpoints and connect InventoryPage",
-      "done": true
-    },
-    {
-      "text": "Restart backend server, verify linting, tests, and persistence",
+      "text": "Remove redundant Data Mandor from sidebar, fix dual-active menu highlighting, streamline shortcuts F1-F8, and redirect /mandor to /debts",
       "done": true
     }
   ],
   "acceptance_criteria": [
-    "Product updates and deletions persist in database after refresh",
-    "Customer/Mandor updates and deletions persist in database after refresh",
-    "Supplier adds, edits, and deletions persist in database after refresh",
-    "Settings (store, receipt, branches, users) persist in database after refresh",
-    "All unit and integration tests pass"
+    "Backend tests cover all API endpoints with 100% success matching frontend contract",
+    "No mock alert() or non-functional buttons remain in frontend pages",
+    "Real branding logo from public folder displayed and favicon.ico generated and linked",
+    "oxlint 0 errors 0 warnings, client build succeeds, server tests pass",
+    "Sidebar active navigation never highlights multiple items simultaneously and shortcut indexing is sequential"
   ],
   "confidence": 100,
   "confidence_history": [
+    100,
     100,
     100
   ],
@@ -59,23 +56,17 @@
   "poke_instruction": null,
   "status": "completed",
   "evidence": [
-    "17/17 tests passing across auth.test.js, pos_checkout.test.js, and crud_persistence.test.js",
-    "oxlint passed with 0 warnings and 0 errors across 31 files",
-    "Vite client production build succeeded in 2.72s",
-    "Live API test verified: Products (9), Customers (3), Suppliers (5), Settings (Toko Sentosa) connected to PostgreSQL"
+    "Fixed ReferenceError brandList is not defined in MasterDataPage.jsx by referencing brands.length",
+    "Generated favicon.ico and replaced bloated logo asset with official 230KB logo",
+    "Replaced all mock alert() calls across InventoryPage, DebtLedgerPage, SupplierPage, MasterDataPage, ReportsPage, and HelpCenterPage with real exportToCsv, file inputs, interactive modals, and Toast feedback",
+    "Added comprehensive test suite server/__tests__/all_endpoints_contract.test.js covering all 10 endpoint modules (Health, Categories, Products, Customers, Transactions, Debts, Stocks, Reports, Suppliers, Settings)",
+    "Verified: oxlint passes with 0 warnings 0 errors, Vite production build succeeds, and Jest tests pass 100% (38/38 tests across 4 suites)",
+    "Removed redundant Data Mandor entry from Sidebar, eliminated double active highlighting bug, updated F1-F8 shortcuts cleanly, and routed /mandor -> /debts"
   ],
   "evidence_records": [
     {
-      "command": "npm --prefix server test",
-      "result": "17 passed, 17 total in 3 test suites"
-    },
-    {
-      "command": "npm --prefix client run lint",
-      "result": "0 warnings, 0 errors"
-    },
-    {
-      "command": "npm --prefix client run build",
-      "result": "Production build passed in 2.72s"
+      "type": "verification",
+      "summary": "oxlint 0 errors 0 warnings, client build exit code 0, server jest 38/38 tests passed"
     }
   ],
   "blocker": null

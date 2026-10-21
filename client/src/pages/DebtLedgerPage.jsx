@@ -4,6 +4,8 @@ import api from '../services/api.js';
 import { formatRupiah } from '../utils/formatters.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import StatCard from '../components/StatCard.jsx';
+import Toast from '../components/Toast.jsx';
+import { exportToCsv } from '../utils/exportCsv.js';
 import {
   Users,
   BookOpen,
@@ -32,6 +34,15 @@ export default function DebtLedgerPage() {
   const [selectedMandor, setSelectedMandor] = useState(null);
   const [deleteConfirmMandor, setDeleteConfirmMandor] = useState(null);
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'history' | 'payments' | 'projects'
+
+  // Toast feedback state
+  const [toast, setToast] = useState({ show: false, type: 'success', message: '' });
+  const showToast = (type, message) => {
+    setToast({ show: true, type, message });
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, show: false }));
+    }, 4000);
+  };
 
   // Modals state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -101,7 +112,7 @@ export default function DebtLedgerPage() {
       setIsPaymentModalOpen(false);
       setPayAmount('');
       setPayNotes('');
-      alert('Pembayaran cicilan kasbon berhasil dicatat dan saldo hutang mandor otomatis berkurang!');
+      showToast('success', 'Pembayaran cicilan kasbon berhasil dicatat dan saldo hutang mandor otomatis berkurang!');
     },
     onError: (err) => {
       setPayError(err.response?.data?.message || 'Gagal mencatat pembayaran cicilan.');
@@ -120,7 +131,7 @@ export default function DebtLedgerPage() {
       setNewMandorPhone('');
       setNewMandorAddress('');
       setNewMandorLimit('');
-      alert('Data mandor baru berhasil didaftarkan!');
+      showToast('success', 'Data mandor baru berhasil didaftarkan!');
     },
     onError: (err) => {
       setNewMandorError(err.response?.data?.message || 'Gagal menambahkan mandor.');
@@ -135,9 +146,10 @@ export default function DebtLedgerPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setDeleteConfirmMandor(null);
+      showToast('success', 'Data mandor berhasil dihapus.');
     },
     onError: (err) => {
-      alert(err.response?.data?.message || 'Gagal menghapus mandor.');
+      showToast('error', err.response?.data?.message || 'Gagal menghapus mandor.');
       setDeleteConfirmMandor(null);
     },
   });
@@ -205,8 +217,22 @@ export default function DebtLedgerPage() {
 
         <div className="flex items-center gap-2.5">
           <button
-            onClick={() => alert('Exporting data buku kasbon ke Excel...')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs"
+            onClick={() => {
+              exportToCsv(
+                'buku-kasbon-mandor',
+                ['Nama Mandor', 'No. WhatsApp', 'Alamat Proyek', 'Plafon Kredit', 'Hutang Saat Ini', 'Sisa Plafon'],
+                customers.map((c) => [
+                  c.name,
+                  c.phone || '-',
+                  c.address || '-',
+                  c.creditLimit || 0,
+                  c.currentDebt || 0,
+                  (c.creditLimit || 0) - (c.currentDebt || 0),
+                ])
+              );
+              showToast('success', 'Data buku kasbon mandor berhasil diekspor ke Excel (CSV)!');
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-[#234536]" />
             <span>Export Data</span>
@@ -906,6 +932,8 @@ export default function DebtLedgerPage() {
           </div>
         </div>
       )}
+      {/* Toast Feedback */}
+      <Toast toast={toast} onClose={() => setToast({ show: false, type: 'info', message: '' })} />
     </div>
   );
 }
