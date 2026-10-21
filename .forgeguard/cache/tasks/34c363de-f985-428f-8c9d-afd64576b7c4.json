@@ -1,7 +1,7 @@
 {
   "version": 2,
   "session_id": "34c363de-f985-428f-8c9d-afd64576b7c4",
-  "objective": "Implement slide-over drawers, replace more-options with delete confirmation, fix POS brand filter and table view, activate Inventory modals, and make Settings buttons interactive",
+  "objective": "Persist all CRUD operations to backend PostgreSQL database: Product update/delete, Customer/Mandor update/delete, Supplier API, Settings API, and Stock mutations, so changes persist across page refresh",
   "profile": "general",
   "scopes": [],
   "resources": [],
@@ -12,36 +12,46 @@
     "target": null,
     "guardrails": [],
     "verifications": [
-      "npm --prefix client run lint && npm --prefix client run build && npm --prefix server test"
+      "npm --prefix client run lint",
+      "npm --prefix client run build",
+      "npm --prefix server test"
     ]
   },
   "todos": [
     {
-      "text": "Inspect and update POSPage brand filtering and implement responsive table view",
+      "text": "Add backend PUT and DELETE endpoints for Products and connect MasterDataPage & InventoryPage",
       "done": true
     },
     {
-      "text": "Inspect and update InventoryPage with slide drawer, delete confirmation, working Input Barang Masuk and Catatan Pengeluaran modals",
+      "text": "Add backend PUT and DELETE endpoints for Customers and connect DebtLedgerPage",
       "done": true
     },
     {
-      "text": "Inspect and update MasterDataPage/DebtLedgerPage/SupplierPage table click, edit drawer, and delete confirmation modal",
+      "text": "Create backend Supplier model, controller, routes and connect SupplierPage with persistent API",
       "done": true
     },
     {
-      "text": "Inspect and implement interactive buttons in SettingsPage (save, test receipt, backup, security)",
+      "text": "Create backend Settings model, controller, routes and connect SettingsPage with persistent API",
       "done": true
     },
     {
-      "text": "Verify build, lint, and test suite",
+      "text": "Add backend Stock Out and Stock Transfer endpoints and connect InventoryPage",
+      "done": true
+    },
+    {
+      "text": "Restart backend server, verify linting, tests, and persistence",
       "done": true
     }
   ],
-  "acceptance_criteria": [],
+  "acceptance_criteria": [
+    "Product updates and deletions persist in database after refresh",
+    "Customer/Mandor updates and deletions persist in database after refresh",
+    "Supplier adds, edits, and deletions persist in database after refresh",
+    "Settings (store, receipt, branches, users) persist in database after refresh",
+    "All unit and integration tests pass"
+  ],
   "confidence": 100,
   "confidence_history": [
-    100,
-    100,
     100,
     100
   ],
@@ -49,22 +59,23 @@
   "poke_instruction": null,
   "status": "completed",
   "evidence": [
-    "npm --prefix client run lint reports 0 warnings and 0 errors across 31 files",
-    "npm --prefix client run build succeeded in 1.27s",
-    "npm --prefix server test passed 10/10 test cases"
+    "17/17 tests passing across auth.test.js, pos_checkout.test.js, and crud_persistence.test.js",
+    "oxlint passed with 0 warnings and 0 errors across 31 files",
+    "Vite client production build succeeded in 2.72s",
+    "Live API test verified: Products (9), Customers (3), Suppliers (5), Settings (Toko Sentosa) connected to PostgreSQL"
   ],
   "evidence_records": [
     {
+      "command": "npm --prefix server test",
+      "result": "17 passed, 17 total in 3 test suites"
+    },
+    {
       "command": "npm --prefix client run lint",
-      "result": "Passed with 0 errors, 0 warnings"
+      "result": "0 warnings, 0 errors"
     },
     {
       "command": "npm --prefix client run build",
-      "result": "Vite production build passed cleanly"
-    },
-    {
-      "command": "npm --prefix server test",
-      "result": "10 passed, 10 total across 2 test suites"
+      "result": "Production build passed in 2.72s"
     }
   ],
   "blocker": null

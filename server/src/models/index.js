@@ -9,6 +9,8 @@ import TransactionItem from './TransactionItem.js';
 import TransactionPayment from './TransactionPayment.js';
 import DebtPayment from './DebtPayment.js';
 import StockMovement from './StockMovement.js';
+import Supplier from './Supplier.js';
+import Setting from './Setting.js';
 
 // Category <-> Product
 Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products' });
@@ -58,6 +60,8 @@ export {
   TransactionPayment,
   DebtPayment,
   StockMovement,
+  Supplier,
+  Setting,
 };
 
 export default {
@@ -72,4 +76,6 @@ export default {
   TransactionPayment,
   DebtPayment,
   StockMovement,
+  Supplier,
+  Setting,
 };

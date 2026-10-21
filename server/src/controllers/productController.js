@@ -35,7 +35,7 @@ export const getAllProducts = async (req, res, next) => {
     });
 
     // Format tampilan stok ramah kasir toko bangunan
-    const formatted = products.map(p => {
+    const formatted = products.map((p) => {
       const pJson = p.toJSON();
       const units = pJson.units || [];
       const highestUnit = units.length > 0 ? units[units.length - 1] : null;
@@ -104,14 +104,17 @@ export const createProduct = async (req, res, next) => {
 
     const currentStockBase = parseFloat(initialStock) || 0;
 
-    const product = await Product.create({
-      sku,
-      name,
-      categoryId: categoryId || null,
-      baseUnit,
-      minStock: parseFloat(minStock) || 0,
-      currentStockBase,
-    }, { transaction: t });
+    const product = await Product.create(
+      {
+        sku,
+        name,
+        categoryId: categoryId || null,
+        baseUnit,
+        minStock: parseFloat(minStock) || 0,
+        currentStockBase,
+      },
+      { transaction: t }
+    );
 
     // Tambahkan unit-unit bertingkat jika ada
     if (Array.isArray(units) && units.length > 0) {
@@ -121,41 +124,50 @@ export const createProduct = async (req, res, next) => {
         conversionFactor: parseFloat(u.conversionFactor) || 1,
         buyPrice: parseFloat(u.buyPrice) || 0,
         sellPrice: parseFloat(u.sellPrice) || 0,
-        level: u.level || (idx + 1),
-        isBase: u.isBase || (parseFloat(u.conversionFactor) === 1),
+        level: u.level || idx + 1,
+        isBase: u.isBase || parseFloat(u.conversionFactor) === 1,
       }));
 
       await ProductUnit.bulkCreate(unitsToCreate, { transaction: t });
     } else {
       // Default: set Base Unit sebagai level 1
-      await ProductUnit.create({
-        productId: product.id,
-        unitName: baseUnit,
-        conversionFactor: 1,
-        buyPrice: 0,
-        sellPrice: 0,
-        level: 1,
-        isBase: true,
-      }, { transaction: t });
+      await ProductUnit.create(
+        {
+          productId: product.id,
+          unitName: baseUnit,
+          conversionFactor: 1,
+          buyPrice: 0,
+          sellPrice: 0,
+          level: 1,
+          isBase: true,
+        },
+        { transaction: t }
+      );
     }
 
     // Catat mutasi stok awal jika ada
     if (currentStockBase > 0) {
-      await StockMovement.create({
-        productId: product.id,
-        type: 'IN',
-        qtyBaseUnit: currentStockBase,
-        previousStock: 0,
-        newStock: currentStockBase,
-        notes: 'Stok awal produk baru',
-        createdBy: req.user ? req.user.id : null,
-      }, { transaction: t });
+      await StockMovement.create(
+        {
+          productId: product.id,
+          type: 'IN',
+          qtyBaseUnit: currentStockBase,
+          previousStock: 0,
+          newStock: currentStockBase,
+          notes: 'Stok awal produk baru',
+          createdBy: req.user ? req.user.id : null,
+        },
+        { transaction: t }
+      );
     }
 
     await t.commit();
 
     const created = await Product.findByPk(product.id, {
-      include: [{ model: ProductUnit, as: 'units' }, { model: Category, as: 'category' }],
+      include: [
+        { model: ProductUnit, as: 'units' },
+        { model: Category, as: 'category' },
+      ],
     });
 
     res.status(201).json({
@@ -165,6 +177,109 @@ export const createProduct = async (req, res, next) => {
     });
   } catch (err) {
     await t.rollback();
+    next(err);
+  }
+};
+
+export const updateProduct = async (req, res, next) => {
+  const t = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { sku, name, categoryId, baseUnit, minStock, currentStockBase, buyPrice, sellPrice, units } = req.body;
+
+    const product = await Product.findByPk(id, { transaction: t });
+    if (!product) {
+      await t.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Produk material tidak ditemukan.',
+      });
+    }
+
+    const updates = {};
+    if (sku !== undefined) updates.sku = sku;
+    if (name !== undefined) updates.name = name;
+    if (categoryId !== undefined) updates.categoryId = categoryId || null;
+    if (baseUnit !== undefined) updates.baseUnit = baseUnit;
+    if (minStock !== undefined) updates.minStock = parseFloat(minStock) || 0;
+    if (currentStockBase !== undefined) updates.currentStockBase = parseFloat(currentStockBase) || 0;
+
+    await product.update(updates, { transaction: t });
+
+    // Update product units if provided or prices provided
+    if (Array.isArray(units) && units.length > 0) {
+      for (const u of units) {
+        if (u.id) {
+          await ProductUnit.update(
+            {
+              unitName: u.unitName,
+              conversionFactor: parseFloat(u.conversionFactor) || 1,
+              buyPrice: parseFloat(u.buyPrice) || 0,
+              sellPrice: parseFloat(u.sellPrice) || 0,
+            },
+            { where: { id: u.id, productId: product.id }, transaction: t }
+          );
+        }
+      }
+    } else if (buyPrice !== undefined || sellPrice !== undefined) {
+      const firstUnit = await ProductUnit.findOne({
+        where: { productId: product.id },
+        order: [['level', 'ASC']],
+        transaction: t,
+      });
+      if (firstUnit) {
+        const unitUpdates = {};
+        if (buyPrice !== undefined) unitUpdates.buyPrice = parseFloat(buyPrice) || 0;
+        if (sellPrice !== undefined) unitUpdates.sellPrice = parseFloat(sellPrice) || 0;
+        await firstUnit.update(unitUpdates, { transaction: t });
+      }
+    }
+
+    await t.commit();
+
+    const updated = await Product.findByPk(product.id, {
+      include: [
+        { model: ProductUnit, as: 'units' },
+        { model: Category, as: 'category' },
+      ],
+    });
+
+    res.json({
+      success: true,
+      message: `Data produk material "${updated.name}" berhasil diperbarui.`,
+      data: updated,
+    });
+  } catch (err) {
+    await t.rollback();
+    next(err);
+  }
+};
+
+export const deleteProduct = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const product = await Product.findByPk(id);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Produk material tidak ditemukan.',
+      });
+    }
+
+    const prodName = product.name;
+    // Coba hapus permanen, jika gagal karena relasi foreign key, gunakan soft-delete isActive = false
+    try {
+      await product.destroy();
+    } catch {
+      await product.update({ isActive: false });
+    }
+
+    res.json({
+      success: true,
+      message: `Produk material "${prodName}" berhasil dihapus dari sistem.`,
+    });
+  } catch (err) {
     next(err);
   }
 };

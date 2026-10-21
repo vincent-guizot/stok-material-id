@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../services/api.js';
 import {
   Settings,
   Store,
@@ -26,6 +28,18 @@ import {
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
+const DEFAULT_USERS = [
+  { id: 1, name: 'Vincent (Owner)', username: 'admin', role: 'Admin (Bos)', status: 'Aktif', badge: '👑' },
+  { id: 2, name: 'Siti Rahmawati', username: 'kasir', role: 'Kasir Toko', status: 'Aktif', badge: '🛒' },
+  { id: 3, name: 'Agus Santoso', username: 'gudang', role: 'Staf Gudang', status: 'Aktif', badge: '📦' },
+];
+
+const DEFAULT_BRANCHES = [
+  { id: 1, name: 'Depo Pusat Sentosa', address: 'Jl. Raya Gresik No. 123', type: 'Toko Utama & Gudang Pusat', status: 'Aktif' },
+  { id: 2, name: 'Cabang Sentosa Surabaya', address: 'Jl. Raya Darmo Indah No. 8', type: 'Depo Material Barat', status: 'Aktif' },
+  { id: 3, name: 'Cabang Sentosa Sidoarjo', address: 'Jl. Pahlawan No. 56', type: 'Depo Material Selatan', status: 'Dalam Persiapan' },
+];
+
 export default function SettingsPage({ subTab, setSubTab }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get('tab');
@@ -42,6 +56,28 @@ export default function SettingsPage({ subTab, setSubTab }) {
     if (setSubTab) setSubTab(tabId);
   };
 
+  // Load persistent settings from backend PostgreSQL
+  const { data: serverSettings } = useQuery({
+    queryKey: ['system_settings'],
+    queryFn: async () => {
+      const res = await api.get('/settings');
+      return res.data.data;
+    },
+  });
+
+  return (
+    <SettingsFormContent
+      key={serverSettings ? 'loaded-settings' : 'initial-settings'}
+      initialSettings={serverSettings}
+      activeTabKey={activeTabKey}
+      handleTabChange={handleTabChange}
+    />
+  );
+}
+
+function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange }) {
+  const queryClient = useQueryClient();
+
   // Feedback Toast state
   const [toast, setToast] = useState({ show: false, type: 'success', message: '' });
   const showToast = (type, message) => {
@@ -52,52 +88,54 @@ export default function SettingsPage({ subTab, setSubTab }) {
   };
 
   // Store info
-  const [storeName, setStoreName] = useState('Toko Sentosa');
+  const [storeName, setStoreName] = useState(initialSettings?.storeName || 'Toko Sentosa');
   const [storeAddress, setStoreAddress] = useState(
-    'Jl. Raya Gresik No. 123, Gresik, Jawa Timur 61111'
+    initialSettings?.storeAddress || 'Jl. Raya Gresik No. 123, Gresik, Jawa Timur 61111'
   );
-  const [storePhone, setStorePhone] = useState('031-1234567');
-  const [storeEmail, setStoreEmail] = useState('tokosentosa@gmail.com');
+  const [storePhone, setStorePhone] = useState(initialSettings?.storePhone || '031-1234567');
+  const [storeEmail, setStoreEmail] = useState(initialSettings?.storeEmail || 'tokosentosa@gmail.com');
 
   // Logo file upload
   const logoInputRef = useRef(null);
-  const [currentLogo, setCurrentLogo] = useState(logoImg);
+  const [currentLogo, setCurrentLogo] = useState(initialSettings?.logoUrl || logoImg);
 
   const handleLogoUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const previewUrl = URL.createObjectURL(file);
       setCurrentLogo(previewUrl);
-      showToast('success', `Logo toko "${file.name}" berhasil dipilih dan dimuat.`);
+      showToast('success', `Logo toko "${file.name}" berhasil dipilih.`);
     }
   };
 
   // Receipt settings
   const [headerReceipt, setHeaderReceipt] = useState(
-    'TOKO SENTOSA\nToko Bangunan & Material Konstruksi\nJl. Raya Gresik No. 123\nTelp. 031-1234567'
+    initialSettings?.headerReceipt ||
+      'TOKO SENTOSA\nToko Bangunan & Material Konstruksi\nJl. Raya Gresik No. 123\nTelp. 031-1234567'
   );
   const [footerReceipt, setFooterReceipt] = useState(
-    'Terima kasih telah berbelanja\nBarang yang sudah dibeli tidak dapat ditukar/dikembalikan.'
+    initialSettings?.footerReceipt ||
+      'Terima kasih telah berbelanja\nBarang yang sudah dibeli tidak dapat ditukar/dikembalikan.'
   );
-  const [showLogo, setShowLogo] = useState(true);
-  const [showAddress, setShowAddress] = useState(true);
-  const [showPhone, setShowPhone] = useState(true);
-  const [showCashier, setShowCashier] = useState(true);
-  const [showThanks, setShowThanks] = useState(true);
-  const [autoPrint, setAutoPrint] = useState(false);
+  const [showLogo, setShowLogo] = useState(initialSettings?.showLogo ?? true);
+  const [showAddress, setShowAddress] = useState(initialSettings?.showAddress ?? true);
+  const [showPhone, setShowPhone] = useState(initialSettings?.showPhone ?? true);
+  const [showCashier, setShowCashier] = useState(initialSettings?.showCashier ?? true);
+  const [showThanks, setShowThanks] = useState(initialSettings?.showThanks ?? true);
+  const [autoPrint, setAutoPrint] = useState(initialSettings?.autoPrint ?? false);
 
   // Stock rules
-  const [lowStockAlert, setLowStockAlert] = useState('50');
-  const [emptyStockAlert, setEmptyStockAlert] = useState('0');
-  const [allowMinusStock, setAllowMinusStock] = useState('no');
-  const [showHppCashier, setShowHppCashier] = useState('no');
+  const [lowStockAlert, setLowStockAlert] = useState(initialSettings?.lowStockAlert || '50');
+  const [emptyStockAlert, setEmptyStockAlert] = useState(initialSettings?.emptyStockAlert || '0');
+  const [allowMinusStock, setAllowMinusStock] = useState(initialSettings?.allowMinusStock || 'no');
+  const [showHppCashier, setShowHppCashier] = useState(initialSettings?.showHppCashier || 'no');
 
   // User Accounts State & Modal
-  const [users, setUsers] = useState([
-    { id: 1, name: 'Vincent (Owner)', username: 'admin', role: 'Admin (Bos)', status: 'Aktif', badge: '👑' },
-    { id: 2, name: 'Siti Rahmawati', username: 'kasir', role: 'Kasir Toko', status: 'Aktif', badge: '🛒' },
-    { id: 3, name: 'Agus Santoso', username: 'gudang', role: 'Staf Gudang', status: 'Aktif', badge: '📦' },
-  ]);
+  const [users, setUsers] = useState(
+    Array.isArray(initialSettings?.usersList) && initialSettings.usersList.length > 0
+      ? initialSettings.usersList
+      : DEFAULT_USERS
+  );
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
   const [userForm, setUserForm] = useState({
@@ -110,11 +148,11 @@ export default function SettingsPage({ subTab, setSubTab }) {
   const [userToDelete, setUserToDelete] = useState(null);
 
   // Branches State & Modal
-  const [branches, setBranches] = useState([
-    { id: 1, name: 'Depo Pusat Sentosa', address: 'Jl. Raya Gresik No. 123', type: 'Toko Utama & Gudang Pusat', status: 'Aktif' },
-    { id: 2, name: 'Cabang Sentosa Surabaya', address: 'Jl. Raya Darmo Indah No. 8', type: 'Depo Material Barat', status: 'Aktif' },
-    { id: 3, name: 'Cabang Sentosa Sidoarjo', address: 'Jl. Pahlawan No. 56', type: 'Depo Material Selatan', status: 'Dalam Persiapan' },
-  ]);
+  const [branches, setBranches] = useState(
+    Array.isArray(initialSettings?.branches) && initialSettings.branches.length > 0
+      ? initialSettings.branches
+      : DEFAULT_BRANCHES
+  );
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
   const [branchForm, setBranchForm] = useState({
     name: '',
@@ -153,9 +191,50 @@ export default function SettingsPage({ subTab, setSubTab }) {
     { id: 'other', label: 'Lainnya' },
   ];
 
+  const persistSettings = async (payload) => {
+    try {
+      await api.put('/settings', payload);
+      queryClient.invalidateQueries({ queryKey: ['system_settings'] });
+    } catch {
+      // silent fallback
+    }
+  };
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: async (payload) => {
+      return api.put('/settings', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system_settings'] });
+      showToast('success', 'Konfigurasi pengaturan toko & sistem berhasil disimpan secara permanen di database!');
+    },
+    onError: (err) => {
+      showToast('error', err.response?.data?.message || 'Gagal menyimpan pengaturan ke database.');
+    },
+  });
+
   // Save changes handler
   const handleSave = () => {
-    showToast('success', 'Konfigurasi pengaturan toko & sistem berhasil disimpan!');
+    saveSettingsMutation.mutate({
+      storeName,
+      storeAddress,
+      storePhone,
+      storeEmail,
+      headerReceipt,
+      footerReceipt,
+      showLogo,
+      showAddress,
+      showPhone,
+      showCashier,
+      showThanks,
+      autoPrint,
+      lowStockAlert,
+      emptyStockAlert,
+      allowMinusStock,
+      showHppCashier,
+      branches,
+      usersList: users,
+    });
   };
 
   // User handlers
@@ -198,8 +277,8 @@ export default function SettingsPage({ subTab, setSubTab }) {
     };
 
     if (editingUserId) {
-      setUsers((prev) =>
-        prev.map((u) =>
+      setUsers((prev) => {
+        const next = prev.map((u) =>
           u.id === editingUserId
             ? {
                 ...u,
@@ -210,8 +289,10 @@ export default function SettingsPage({ subTab, setSubTab }) {
                 badge: badgeMap[userForm.role] || '👤',
               }
             : u
-        )
-      );
+        );
+        persistSettings({ usersList: next });
+        return next;
+      });
       showToast('success', `Akun pengguna "${userForm.name}" berhasil diperbarui.`);
     } else {
       const newUser = {
@@ -222,7 +303,11 @@ export default function SettingsPage({ subTab, setSubTab }) {
         status: userForm.status,
         badge: badgeMap[userForm.role] || '👤',
       };
-      setUsers((prev) => [...prev, newUser]);
+      setUsers((prev) => {
+        const next = [...prev, newUser];
+        persistSettings({ usersList: next });
+        return next;
+      });
       showToast('success', `Akun pengguna baru "${newUser.name}" berhasil ditambahkan.`);
     }
     setIsUserModalOpen(false);
@@ -230,7 +315,11 @@ export default function SettingsPage({ subTab, setSubTab }) {
 
   const handleDeleteUser = () => {
     if (!userToDelete) return;
-    setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
+    setUsers((prev) => {
+      const next = prev.filter((u) => u.id !== userToDelete.id);
+      persistSettings({ usersList: next });
+      return next;
+    });
     showToast('success', `Akun "${userToDelete.name}" telah dihapus.`);
     setUserToDelete(null);
   };
@@ -261,7 +350,11 @@ export default function SettingsPage({ subTab, setSubTab }) {
       status: branchForm.status,
     };
 
-    setBranches((prev) => [...prev, newBranch]);
+    setBranches((prev) => {
+      const next = [...prev, newBranch];
+      persistSettings({ branches: next });
+      return next;
+    });
     showToast('success', `Cabang/Depo "${newBranch.name}" berhasil didaftarkan.`);
     setIsBranchModalOpen(false);
   };

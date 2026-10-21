@@ -31,7 +31,6 @@ export default function DebtLedgerPage() {
   const [sortOrder, setSortOrder] = useState('debt-high');
   const [selectedMandor, setSelectedMandor] = useState(null);
   const [deleteConfirmMandor, setDeleteConfirmMandor] = useState(null);
-  const [deletedMandorIds, setDeletedMandorIds] = useState(new Set());
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'history' | 'payments' | 'projects'
 
   // Modals state
@@ -71,9 +70,6 @@ export default function DebtLedgerPage() {
   // Filter & sort
   const filteredCustomers = customers
     .filter((c) => {
-      if (deletedMandorIds.has(c.id)) {
-        return false;
-      }
       const debt = parseFloat(c.currentDebt) || 0;
       const limit = parseFloat(c.creditLimit) || 1;
       const ratio = debt / limit;
@@ -131,13 +127,27 @@ export default function DebtLedgerPage() {
     },
   });
 
+  // Mutation Hapus Mandor
+  const deleteMandorMutation = useMutation({
+    mutationFn: async (id) => {
+      return api.delete(`/customers/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setDeleteConfirmMandor(null);
+    },
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Gagal menghapus mandor.');
+      setDeleteConfirmMandor(null);
+    },
+  });
+
   const handleConfirmDeleteMandor = () => {
     if (!deleteConfirmMandor) return;
-    setDeletedMandorIds((prev) => new Set(prev).add(deleteConfirmMandor.id));
+    deleteMandorMutation.mutate(deleteConfirmMandor.id);
     if (selectedMandor?.id === deleteConfirmMandor.id) {
       setSelectedMandor(null);
     }
-    setDeleteConfirmMandor(null);
   };
 
   const handlePaySubmit = (e) => {

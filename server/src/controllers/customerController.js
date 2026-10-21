@@ -7,7 +7,7 @@ export const getAllCustomers = async (req, res, next) => {
       order: [['name', 'ASC']],
     });
 
-    const enriched = customers.map(c => {
+    const enriched = customers.map((c) => {
       const cJson = c.toJSON();
       const limit = parseFloat(cJson.creditLimit) || 0;
       const debt = parseFloat(cJson.currentDebt) || 0;
@@ -99,6 +99,70 @@ export const createCustomer = async (req, res, next) => {
       success: true,
       message: 'Data Mandor / Pelanggan berhasil ditambahkan.',
       data: customer,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateCustomer = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, phone, address, creditLimit, termDays } = req.body;
+
+    const customer = await Customer.findByPk(id);
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pelanggan / Mandor tidak ditemukan.',
+      });
+    }
+
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (phone !== undefined) updates.phone = phone;
+    if (address !== undefined) updates.address = address;
+    if (creditLimit !== undefined) updates.creditLimit = parseFloat(creditLimit) || 0;
+    if (termDays !== undefined) updates.termDays = parseInt(termDays, 10) || 14;
+
+    await customer.update(updates);
+
+    res.json({
+      success: true,
+      message: `Data Mandor "${customer.name}" berhasil diperbarui.`,
+      data: customer,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteCustomer = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const customer = await Customer.findByPk(id);
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pelanggan / Mandor tidak ditemukan.',
+      });
+    }
+
+    const name = customer.name;
+    // Check if customer has outstanding debt
+    if (parseFloat(customer.currentDebt) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Mandor "${name}" tidak dapat dihapus karena masih memiliki saldo kasbon sebesar Rp ${parseFloat(customer.currentDebt).toLocaleString('id-ID')}.`,
+      });
+    }
+
+    await customer.destroy();
+
+    res.json({
+      success: true,
+      message: `Data Mandor "${name}" berhasil dihapus.`,
     });
   } catch (err) {
     next(err);

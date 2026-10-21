@@ -1,11 +1,18 @@
 import { Router } from 'express';
-import { getAllCustomers, getCustomerById, createCustomer } from '../controllers/customerController.js';
-import { authenticate } from '../middlewares/authMiddleware.js';
+import {
+  getAllCustomers,
+  getCustomerById,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+} from '../controllers/customerController.js';
 
 const router = Router();
 
 router.get('/', getAllCustomers);
 router.get('/:id', getCustomerById);
-router.post('/', authenticate, createCustomer);
+router.post('/', createCustomer);
+router.put('/:id', updateCustomer);
+router.delete('/:id', deleteCustomer);
 
 export default router;

@@ -7,6 +7,8 @@ import transactionRoutes from './transactionRoutes.js';
 import debtRoutes from './debtRoutes.js';
 import stockRoutes from './stockRoutes.js';
 import reportRoutes from './reportRoutes.js';
+import supplierRoutes from './supplierRoutes.js';
+import settingRoutes from './settingRoutes.js';
 
 const router = Router();
 
@@ -18,6 +20,8 @@ router.use('/transactions', transactionRoutes);
 router.use('/debts', debtRoutes);
 router.use('/stocks', stockRoutes);
 router.use('/reports', reportRoutes);
+router.use('/suppliers', supplierRoutes);
+router.use('/settings', settingRoutes);
 
 router.get('/health', (req, res) => {
   res.json({

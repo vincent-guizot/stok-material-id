@@ -49,7 +49,6 @@ export default function MasterDataPage({ subTab, setSubTab }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [deleteConfirmProduct, setDeleteConfirmProduct] = useState(null);
-  const [deletedProductIds, setDeletedProductIds] = useState(new Set());
   const [formTab, setFormTab] = useState('basic'); // 'basic' | 'price' | 'units' | 'other'
 
   // Form states for Tambah Produk
@@ -92,10 +91,39 @@ export default function MasterDataPage({ subTab, setSubTab }) {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setIsAddDrawerOpen(false);
       resetForm();
-      alert('Produk material baru berhasil ditambahkan!');
     },
     onError: (err) => {
       setFormError(err.response?.data?.message || 'Gagal menambahkan produk.');
+    },
+  });
+
+  // Update Product Mutation
+  const updateProductMutation = useMutation({
+    mutationFn: async ({ id, payload }) => {
+      return api.put(`/products/${id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setIsAddDrawerOpen(false);
+      resetForm();
+    },
+    onError: (err) => {
+      setFormError(err.response?.data?.message || 'Gagal memperbarui data produk.');
+    },
+  });
+
+  // Delete Product Mutation
+  const deleteProductMutation = useMutation({
+    mutationFn: async (id) => {
+      return api.delete(`/products/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setDeleteConfirmProduct(null);
+    },
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Gagal menghapus produk dari database.');
+      setDeleteConfirmProduct(null);
     },
   });
 
@@ -166,12 +194,11 @@ export default function MasterDataPage({ subTab, setSubTab }) {
 
   const handleConfirmDelete = () => {
     if (!deleteConfirmProduct) return;
-    setDeletedProductIds((prev) => new Set(prev).add(deleteConfirmProduct.id));
+    deleteProductMutation.mutate(deleteConfirmProduct.id);
     if (selectedProduct?.id === deleteConfirmProduct.id) {
       setIsAddDrawerOpen(false);
       setSelectedProduct(null);
     }
-    setDeleteConfirmProduct(null);
   };
 
   const handleCreateProductSubmit = (e) => {
@@ -183,8 +210,19 @@ export default function MasterDataPage({ subTab, setSubTab }) {
     }
 
     if (isEditMode && selectedProduct) {
-      alert(`Data produk "${prodName}" berhasil diperbarui!`);
-      setIsAddDrawerOpen(false);
+      updateProductMutation.mutate({
+        id: selectedProduct.id,
+        payload: {
+          name: prodName,
+          sku: prodSku,
+          categoryId: prodCatId || (categories[0]?.id || 1),
+          baseUnit: prodBaseUnit,
+          minStock: parseFloat(prodMinStock) || 10,
+          currentStockBase: parseFloat(prodInitialStock) || 0,
+          buyPrice: parseFloat(prodBuyPrice) || 0,
+          sellPrice: parseFloat(prodSellPrice) || 0,
+        },
+      });
       return;
     }
 
@@ -440,7 +478,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                           Memuat master data produk...
                         </td>
                       </tr>
-                    ) : products.filter((p) => !deletedProductIds.has(p.id)).length === 0 ? (
+                    ) : products.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="py-12 text-center text-xs text-[#8C877D]">
                           Belum ada data produk material.
@@ -448,7 +486,6 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                       </tr>
                     ) : (
                       products
-                        .filter((p) => !deletedProductIds.has(p.id))
                         .map((p, idx) => {
                           const primaryUnit = p.units?.[p.units.length - 1] || p.units?.[0] || {};
                           const isOutOfStock = p.currentStockBase <= 0;

@@ -50,7 +50,6 @@ export default function InventoryPage({ subTab, setSubTab }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [drawerTab, setDrawerTab] = useState('summary'); // 'summary' | 'mutations' | 'pricing' | 'edit'
   const [deleteConfirmProduct, setDeleteConfirmProduct] = useState(null);
-  const [deletedProductIds, setDeletedProductIds] = useState(new Set());
 
   // Modals state
   const [isStockInModalOpen, setIsStockInModalOpen] = useState(false);
@@ -162,12 +161,59 @@ export default function InventoryPage({ subTab, setSubTab }) {
     },
   });
 
+  // Mutation Update Product
+  const updateProductMutation = useMutation({
+    mutationFn: async ({ id, payload }) => {
+      return api.put(`/products/${id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setSelectedProduct(null);
+      alert('Data produk material berhasil diperbarui secara permanen!');
+    },
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Gagal memperbarui produk.');
+    },
+  });
+
+  // Mutation Delete Product
+  const deleteProductMutation = useMutation({
+    mutationFn: async (id) => {
+      return api.delete(`/products/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setDeleteConfirmProduct(null);
+    },
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Gagal menghapus produk.');
+      setDeleteConfirmProduct(null);
+    },
+  });
+
+  // Mutation Surat Jalan / Barang Keluar
+  const stockOutMutation = useMutation({
+    mutationFn: async (payload) => {
+      return api.post('/stocks/out', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+
+  // Mutation Transfer Lokasi Stok
+  const stockTransferMutation = useMutation({
+    mutationFn: async (payload) => {
+      return api.post('/stocks/transfer', payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+
   // Filtered products list
   const filteredProducts = products
     .filter((p) => {
-      if (deletedProductIds.has(p.id)) {
-        return false;
-      }
       if (categoryFilter !== 'all' && p.categoryId !== parseInt(categoryFilter, 10)) {
         return false;
       }
@@ -306,7 +352,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
 
   const handleStockOutSubmit = (e) => {
     e.preventDefault();
-    const prod = products.find((x) => x.id === parseInt(outProductId, 10));
+    const prod = products.find((x) => x.id === outProductId || String(x.id) === String(outProductId));
     const newOut = {
       id: `DO-${outDate.replace(/-/g, '')}-${String(outboundItemsList.length + 1).padStart(2, '0')}`,
       date: `${outDate}, 14:00`,
@@ -317,6 +363,16 @@ export default function InventoryPage({ subTab, setSubTab }) {
       status: 'Terkirim',
     };
     setOutboundItemsList([newOut, ...outboundItemsList]);
+    if (outProductId) {
+      stockOutMutation.mutate({
+        productId: outProductId,
+        qty: parseFloat(outQty) || 1,
+        destination: outDest,
+        receiver: outReceiver,
+        driver: outDriver,
+        notes: outNotes,
+      });
+    }
     setIsStockOutModalOpen(false);
     setOutDest('');
     setOutReceiver('');
@@ -324,12 +380,12 @@ export default function InventoryPage({ subTab, setSubTab }) {
     setOutQty('');
     setOutDriver('');
     setOutNotes('');
-    alert(`Surat Jalan ${newOut.id} berhasil dicatat dan stok material otomatis dipotong!`);
+    alert(`Surat Jalan ${newOut.id} berhasil dicatat dan stok material otomatis dipotong di database!`);
   };
 
   const handleMutationSubmit = (e) => {
     e.preventDefault();
-    const prod = products.find((x) => x.id === parseInt(mutProductId, 10));
+    const prod = products.find((x) => x.id === mutProductId || String(x.id) === String(mutProductId));
     const newMut = {
       id: `MUT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(stockMutationsList.length + 1).padStart(2, '0')}`,
       date: '20 Okt 2026',
@@ -341,6 +397,15 @@ export default function InventoryPage({ subTab, setSubTab }) {
       notes: mutNotes || 'Mutasi stok internal',
     };
     setStockMutationsList([newMut, ...stockMutationsList]);
+    if (mutProductId) {
+      stockTransferMutation.mutate({
+        productId: mutProductId,
+        qty: parseFloat(mutQty) || 1,
+        fromLocation: mutFrom,
+        toLocation: mutTo,
+        notes: mutNotes,
+      });
+    }
     setIsMutationModalOpen(false);
     setMutProductId('');
     setMutQty('');
@@ -350,12 +415,10 @@ export default function InventoryPage({ subTab, setSubTab }) {
 
   const handleConfirmDeleteProduct = () => {
     if (!deleteConfirmProduct) return;
-    setDeletedProductIds((prev) => new Set(prev).add(deleteConfirmProduct.id));
+    deleteProductMutation.mutate(deleteConfirmProduct.id);
     if (selectedProduct?.id === deleteConfirmProduct.id) {
       setSelectedProduct(null);
     }
-    alert(`Produk "${deleteConfirmProduct.name}" berhasil dihapus dari inventaris.`);
-    setDeleteConfirmProduct(null);
   };
 
   const stockOpnameList = [
@@ -1735,8 +1798,20 @@ export default function InventoryPage({ subTab, setSubTab }) {
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      alert(`Data produk "${selectedProduct.name}" berhasil diperbarui!`);
-                      setSelectedProduct(null);
+                      const form = e.target;
+                      const name = form.elements.name.value;
+                      const sku = form.elements.sku.value;
+                      const baseUnit = form.elements.baseUnit.value;
+                      const minStock = form.elements.minStock.value;
+                      updateProductMutation.mutate({
+                        id: selectedProduct.id,
+                        payload: {
+                          name,
+                          sku,
+                          baseUnit,
+                          minStock: parseFloat(minStock) || 0,
+                        },
+                      });
                     }}
                     className="space-y-3"
                   >
@@ -1744,6 +1819,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
                       <label className="font-bold text-[#252922] block mb-1">Nama Material *</label>
                       <input
                         type="text"
+                        name="name"
                         defaultValue={selectedProduct.name}
                         required
                         className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-semibold"
@@ -1755,6 +1831,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
                         <label className="font-bold text-[#252922] block mb-1">SKU *</label>
                         <input
                           type="text"
+                          name="sku"
                           defaultValue={selectedProduct.sku}
                           required
                           className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-mono"
@@ -1764,6 +1841,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
                         <label className="font-bold text-[#252922] block mb-1">Satuan Dasar</label>
                         <input
                           type="text"
+                          name="baseUnit"
                           defaultValue={selectedProduct.baseUnit || 'Pcs'}
                           className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
                         />
@@ -1774,7 +1852,8 @@ export default function InventoryPage({ subTab, setSubTab }) {
                       <label className="font-bold text-[#252922] block mb-1">Minimum Stok Pengingat</label>
                       <input
                         type="number"
-                        defaultValue={selectedProduct.minStockBase || 10}
+                        name="minStock"
+                        defaultValue={selectedProduct.minStockBase || selectedProduct.minStock || 10}
                         className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
                       />
                     </div>

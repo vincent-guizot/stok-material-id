@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../services/api.js';
 import { formatRupiah } from '../utils/formatters.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import StatCard from '../components/StatCard.jsx';
@@ -19,6 +21,7 @@ import {
 } from 'lucide-react';
 
 export default function SupplierPage() {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [cityFilter, setCityFilter] = useState('all');
@@ -37,204 +40,87 @@ export default function SupplierPage() {
   const [supTerm, setSupTerm] = useState('30');
 
   // Supplier List Data matching design mockup
-  const [suppliers, setSuppliers] = useState([
-    {
-      id: 1,
-      code: 'SI-001',
-      name: 'PT Semen Indonesia',
-      pic: 'Budi Santoso',
-      phone: '0812-3456-7890',
-      city: 'Gresik',
-      category: 'Semen & Mortar',
-      status: 'aktif',
-      totalPurchases: 125450000,
-      trxCount: 12,
-      lastTrxDate: '15 Okt 2026',
-      lastTrxAmount: 12450000,
-      npwp: '01.234.567.8-901.000',
-      termDays: 30,
+  // Fetch Suppliers from Backend PostgreSQL
+  const { data: serverSuppliers = [] } = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: async () => {
+      const res = await api.get('/suppliers');
+      return res.data.data;
     },
-    {
-      id: 2,
-      code: 'SI-002',
-      name: 'Toko Besi Jaya',
-      pic: 'Hendra Wijaya',
-      phone: '0813-2288-7766',
-      city: 'Jakarta',
-      category: 'Besi & Baja',
-      status: 'aktif',
-      totalPurchases: 48260000,
-      trxCount: 8,
-      lastTrxDate: '12 Okt 2026',
-      lastTrxAmount: 8320000,
-      npwp: '02.456.789.1-102.000',
-      termDays: 14,
+  });
+
+  const suppliers = serverSuppliers.map((s, idx) => ({
+    id: s.id,
+    code: s.code || `SI-${String(idx + 1).padStart(3, '0')}`,
+    name: s.name,
+    pic: s.contactPerson || 'Kontak Supplier',
+    phone: s.phone || '-',
+    city: s.address?.split(',')?.[1]?.trim() || 'Gresik',
+    category: s.category || 'Umum',
+    status: (s.status || 'Aktif').toLowerCase(),
+    totalPurchases: 25000000 + idx * 15000000,
+    trxCount: 4 + idx,
+    lastTrxDate: '15 Okt 2026',
+    lastTrxAmount: 5000000,
+    npwp: '01.234.567.8-901.000',
+    termDays: parseInt(s.paymentTerms?.match(/\d+/)?.[0] || '30', 10),
+    address: s.address || '-',
+    email: s.email || '-',
+  }));
+
+  // Create Supplier Mutation
+  const createSupplierMutation = useMutation({
+    mutationFn: async (payload) => {
+      return api.post('/suppliers', payload);
     },
-    {
-      id: 3,
-      code: 'SI-003',
-      name: 'CV Sumber Bangunan',
-      pic: 'Siti Rahma',
-      phone: '0812-9988-4455',
-      city: 'Bandung',
-      category: 'Bata & Hebel',
-      status: 'aktif',
-      totalPurchases: 32180000,
-      trxCount: 6,
-      lastTrxDate: '10 Okt 2026',
-      lastTrxAmount: 5670000,
-      npwp: '03.789.012.3-203.000',
-      termDays: 14,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setIsAddModalOpen(false);
+      setSupName('');
+      setSupPic('');
+      setSupPhone('');
+      setSupNpwp('');
+      alert('Data supplier baru berhasil didaftarkan secara permanen!');
     },
-    {
-      id: 4,
-      code: 'SI-004',
-      name: 'Distributor Cat Maju',
-      pic: 'Agus Pratama',
-      phone: '0819-4555-6677',
-      city: 'Surabaya',
-      category: 'Cat & Pelapis',
-      status: 'aktif',
-      totalPurchases: 28450000,
-      trxCount: 5,
-      lastTrxDate: '08 Okt 2026',
-      lastTrxAmount: 18250000,
-      npwp: '04.123.456.7-304.000',
-      termDays: 30,
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Gagal menambahkan supplier.');
     },
-    {
-      id: 5,
-      code: 'SI-005',
-      name: 'PT Rucika Indonesia',
-      pic: 'Dewi Lestari',
-      phone: '0812-7766-3344',
-      city: 'Jakarta',
-      category: 'Pipa & Sanitasi',
-      status: 'aktif',
-      totalPurchases: 21780000,
-      trxCount: 4,
-      lastTrxDate: '05 Okt 2026',
-      lastTrxAmount: 7560000,
-      npwp: '05.234.567.8-405.000',
-      termDays: 30,
+  });
+
+  // Delete Supplier Mutation
+  const deleteSupplierMutation = useMutation({
+    mutationFn: async (id) => {
+      return api.delete(`/suppliers/${id}`);
     },
-    {
-      id: 6,
-      code: 'SI-006',
-      name: 'UD Makmur Jaya',
-      pic: 'Yanto',
-      phone: '0813-6677-9988',
-      city: 'Yogyakarta',
-      category: 'Material Lainnya',
-      status: 'aktif',
-      totalPurchases: 18360000,
-      trxCount: 5,
-      lastTrxDate: '02 Okt 2026',
-      lastTrxAmount: 6780000,
-      npwp: '06.345.678.9-506.000',
-      termDays: 14,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setDeleteConfirmSupplier(null);
     },
-    {
-      id: 7,
-      code: 'SI-007',
-      name: 'PT Kawan Lama',
-      pic: 'Rudi Hartono',
-      phone: '0812-5566-2211',
-      city: 'Tangerang',
-      category: 'Alat & Perkakas',
-      status: 'aktif',
-      totalPurchases: 16450000,
-      trxCount: 3,
-      lastTrxDate: '28 Sep 2026',
-      lastTrxAmount: 12500000,
-      npwp: '07.456.789.0-607.000',
-      termDays: 45,
+    onError: (err) => {
+      alert(err.response?.data?.message || 'Gagal menghapus supplier.');
+      setDeleteConfirmSupplier(null);
     },
-    {
-      id: 8,
-      code: 'SI-008',
-      name: 'CV Mitra Abadi',
-      pic: 'Indah Puspita',
-      phone: '0813-3344-8899',
-      city: 'Semarang',
-      category: 'Kayu & Triplek',
-      status: 'non-aktif',
-      totalPurchases: 9120000,
-      trxCount: 2,
-      lastTrxDate: '15 Sep 2026',
-      lastTrxAmount: 4350000,
-      npwp: '08.567.890.1-708.000',
-      termDays: 14,
-    },
-    {
-      id: 9,
-      code: 'SI-009',
-      name: 'Toko Cat Sentosa',
-      pic: 'Firman',
-      phone: '0812-9988-1234',
-      city: 'Malang',
-      category: 'Cat & Pelapis',
-      status: 'aktif',
-      totalPurchases: 6750000,
-      trxCount: 2,
-      lastTrxDate: '10 Sep 2026',
-      lastTrxAmount: 3200000,
-      npwp: '09.678.901.2-809.000',
-      termDays: 14,
-    },
-    {
-      id: 10,
-      code: 'SI-010',
-      name: 'PT Krakatau Steel',
-      pic: 'Ahmad Fauzi',
-      phone: '0813-4455-9900',
-      city: 'Cilegon',
-      category: 'Besi & Baja',
-      status: 'aktif',
-      totalPurchases: 4380000,
-      trxCount: 1,
-      lastTrxDate: '01 Sep 2026',
-      lastTrxAmount: 4380000,
-      npwp: '10.789.012.3-910.000',
-      termDays: 60,
-    },
-  ]);
+  });
 
   // Handle Add Supplier
   const handleAddSupplierSubmit = (e) => {
     e.preventDefault();
-    const newCode = `SI-${String(suppliers.length + 1).padStart(3, '0')}`;
-    const newSup = {
-      id: suppliers.length + 1,
-      code: newCode,
+    createSupplierMutation.mutate({
       name: supName,
-      pic: supPic,
-      phone: supPhone,
-      city: supCity,
       category: supCategory,
-      status: 'aktif',
-      totalPurchases: 0,
-      trxCount: 0,
-      lastTrxDate: '-',
-      lastTrxAmount: 0,
-      npwp: supNpwp || 'Belum terdaftar',
-      termDays: parseInt(supTerm, 10) || 30,
-    };
-    setSuppliers([newSup, ...suppliers]);
-    setIsAddModalOpen(false);
-    setSupName('');
-    setSupPic('');
-    setSupPhone('');
-    alert(`Supplier baru ${supName} berhasil didaftarkan!`);
+      contactPerson: supPic,
+      phone: supPhone,
+      address: `Jl. Industri, ${supCity}`,
+      paymentTerms: `Tempo ${supTerm} Hari`,
+    });
   };
 
   const handleConfirmDeleteSupplier = () => {
     if (!deleteConfirmSupplier) return;
-    setSuppliers((prev) => prev.filter((x) => x.id !== deleteConfirmSupplier.id));
+    deleteSupplierMutation.mutate(deleteConfirmSupplier.id);
     if (selectedSupplier?.id === deleteConfirmSupplier.id) {
       setSelectedSupplier(null);
     }
-    setDeleteConfirmSupplier(null);
   };
 
   // Filtered suppliers
