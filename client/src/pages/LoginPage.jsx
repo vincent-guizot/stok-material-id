@@ -1,3 +1,5 @@
+import { motion, useReducedMotion } from 'framer-motion';
+import { motionTransition } from '../components/motion/presets.js';
 import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore.js';
@@ -8,6 +10,7 @@ import {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
   const { user, login, quickDemoLogin, isLoading, error } = useAuthStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -40,9 +43,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F4ED] flex flex-col justify-center items-center p-4">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={motionTransition} className="min-h-screen bg-[#F7F4ED] flex flex-col justify-center items-center p-4">
       {/* Brand Header */}
-      <div className="text-center mb-6">
+      <motion.div initial={{ opacity: 0, y: reduceMotion ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} transition={motionTransition} className="text-center mb-6">
         <div className="w-16 h-16 bg-[#234536] rounded-2xl mx-auto flex items-center justify-center text-white text-3xl shadow-card mb-3 overflow-hidden">
           <img
             src="/02_ikon-aplikasi-full-color.png"
@@ -60,7 +63,7 @@ export default function LoginPage() {
         <p className="text-xs text-[#625D53] mt-1 font-medium">
           Sistem Kasir & Manajemen Stok Multi-Satuan Toko Bangunan
         </p>
-      </div>
+      </motion.div>
 
       {/* Login Card */}
       <div className="max-w-md w-full bg-white rounded-card shadow-modal border border-[#DEDCCF] p-6 sm:p-8 space-y-6">
@@ -108,14 +111,15 @@ export default function LoginPage() {
             />
           </div>
 
-          <button
+          <motion.button
+            whileTap={reduceMotion ? undefined : { scale: 0.99 }}
             type="submit"
             disabled={isLoading}
             className="w-full py-3 rounded-control bg-[#234536] hover:bg-[#1c372b] active:scale-[0.99] text-white font-extrabold text-xs shadow-xs flex items-center justify-center gap-2 transition disabled:opacity-50"
           >
             <LogIn className="w-4 h-4" />
             <span>{isLoading ? 'Sedang Masuk...' : 'MASUK SEKARANG'}</span>
-          </button>
+          </motion.button>
         </form>
 
         {/* Quick Demo Login Switcher */}
@@ -168,6 +172,6 @@ export default function LoginPage() {
       <div className="text-center text-[11px] text-[#8C877D] mt-6">
         © 2026 StokMaterial.id. Desain sistem POS & Depo Bahan Bangunan.
       </div>
-    </div>
+    </motion.div>
   );
 }

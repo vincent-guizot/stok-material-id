@@ -97,6 +97,8 @@ export default function TopHeader({
         onClick={onToggleMobileSidebar}
         className="lg:hidden p-2 rounded-control bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] text-[#252922] transition shrink-0"
         title="Buka Menu Navigasi"
+        aria-label="Buka Menu Navigasi"
+        aria-haspopup="dialog"
       >
         <Menu className="w-4 h-4 text-[#234536]" />
       </button>
