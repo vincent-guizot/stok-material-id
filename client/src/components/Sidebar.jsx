@@ -1,3 +1,5 @@
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { motionTransition } from './motion/presets.js';
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -22,6 +24,7 @@ export default function Sidebar({
   onClose,
 }) {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
   const location = useLocation();
   const currentPath = location.pathname.replace(/^\//, '').split('/')[0];
   const effectiveActiveTab = activeTab || (currentPath === '' ? 'pos' : currentPath);
@@ -144,8 +147,13 @@ export default function Sidebar({
             (item.id === 'pos' && (effectiveActiveTab === '' || effectiveActiveTab === '/'));
 
           return (
-            <button
+            <motion.button
               key={item.id}
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
+              whileHover={reduceMotion ? undefined : { x: 2 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+              transition={motionTransition}
               onClick={() => handleSelectNav(item)}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-control text-xs font-bold transition-all ${
                 isActive
@@ -180,7 +188,7 @@ export default function Sidebar({
                   </span>
                 )}
               </div>
-            </button>
+            </motion.button>
           );
         })}
 
@@ -258,20 +266,28 @@ export default function Sidebar({
         {sidebarContent}
       </aside>
 
-      {/* Mobile Drawer (Visible when isOpen is true) */}
-      {isOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
-            onClick={onClose}
-          />
-          {/* Drawer Slide-in */}
-          <div className="relative w-64 max-w-[80vw] h-full bg-white shadow-2xl z-10 animate-in slide-in-from-left duration-200">
-            {sidebarContent}
-          </div>
-        </div>
-      )}
+      {/* Keep the drawer mounted until its exit transition completes. */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div key="mobile-navigation" className="fixed inset-0 z-50 lg:hidden flex"
+            initial="closed" animate="open" exit="closed">
+            <motion.button
+              type="button" aria-label="Tutup menu navigasi"
+              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+              onClick={onClose}
+              variants={{ closed: { opacity: 0 }, open: { opacity: 1 } }}
+              transition={motionTransition}
+            />
+            <motion.div
+              className="relative w-64 max-w-[80vw] h-full bg-white shadow-2xl z-10"
+              variants={{ closed: { x: reduceMotion ? 0 : '-100%', opacity: 0 }, open: { x: 0, opacity: 1 } }}
+              transition={motionTransition}
+            >
+              {sidebarContent}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
