@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { fade, motionTransition } from './motion/presets.js';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import TopHeader from './TopHeader.jsx';
@@ -20,6 +20,7 @@ export default function AppShell({
   const { items } = useCartStore();
   const [isWholesale, setIsWholesale] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const closeMobileSidebar = useCallback(() => setIsMobileSidebarOpen(false), []);
   const [localSearch, setLocalSearch] = useState('');
 
   const location = useLocation();
@@ -128,7 +129,7 @@ export default function AppShell({
         user={user}
         cartCount={items.length}
         isOpen={isMobileSidebarOpen}
-        onClose={() => setIsMobileSidebarOpen(false)}
+        onClose={closeMobileSidebar}
       />
 
       {/* Main Content Area */}

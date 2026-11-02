@@ -1,3 +1,5 @@
+import { motion, useReducedMotion } from 'framer-motion';
+import { motionTransition } from './motion/presets.js';
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -12,10 +14,17 @@ export default function StatCard({
   className = '',
   onClick,
 }) {
+  const reduceMotion = useReducedMotion();
+  const Surface = onClick ? motion.button : motion.div;
   return (
-    <div
+    <Surface
+      type={onClick ? 'button' : undefined}
+      initial={false}
+      whileHover={reduceMotion || !onClick ? undefined : { y: -2 }}
+      whileTap={reduceMotion || !onClick ? undefined : { scale: 0.99 }}
+      transition={motionTransition}
       onClick={onClick}
-      className={`bg-white rounded-card border border-[#DEDCCF] p-3.5 sm:p-4 flex items-center justify-between gap-2.5 shadow-card transition-all w-full min-w-0 overflow-hidden ${
+      className={`bg-white rounded-card border border-[#DEDCCF] p-3.5 sm:p-4 flex items-center justify-between gap-2.5 shadow-card text-left transition-colors w-full min-w-0 overflow-hidden ${
         onClick ? 'cursor-pointer hover:border-[#234536] hover:shadow-card-hover' : ''
       } ${className}`}
     >
@@ -58,6 +67,6 @@ export default function StatCard({
           <span className="truncate">{trend}</span>
         </div>
       )}
-    </div>
+    </Surface>
   );
 }

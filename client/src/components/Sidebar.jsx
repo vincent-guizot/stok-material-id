@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { motionTransition } from './motion/presets.js';
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ShoppingCart,
@@ -25,6 +25,24 @@ export default function Sidebar({
 }) {
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
+  const drawerRef = useRef(null);
+  useEffect(() => {
+    if (!isOpen || window.innerWidth >= 1024) return;
+    const previousFocus = document.activeElement;
+    const drawer = drawerRef.current;
+    const selector = 'button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]';
+    drawer?.querySelector(selector)?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); onClose?.(); }
+      if (event.key !== 'Tab') return;
+      const controls = [...(drawer?.querySelectorAll(selector) || [])];
+      const first = controls[0]; const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => { document.removeEventListener('keydown', onKeyDown); previousFocus?.focus?.(); };
+  }, [isOpen, onClose]);
   const location = useLocation();
   const currentPath = location.pathname.replace(/^\//, '').split('/')[0];
   const effectiveActiveTab = activeTab || (currentPath === '' ? 'pos' : currentPath);
@@ -155,7 +173,7 @@ export default function Sidebar({
               whileTap={reduceMotion ? undefined : { scale: 0.98 }}
               transition={motionTransition}
               onClick={() => handleSelectNav(item)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-control text-xs font-bold transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-control text-xs font-bold transition-colors ${
                 isActive
                   ? 'bg-[#234536] text-white shadow-sm'
                   : 'text-[#252922] hover:bg-[#F7F4ED] hover:text-[#234536]'
@@ -279,6 +297,7 @@ export default function Sidebar({
               transition={motionTransition}
             />
             <motion.div
+              ref={drawerRef} role="dialog" aria-modal="true" aria-label="Menu navigasi"
               className="relative w-64 max-w-[80vw] h-full bg-white shadow-2xl z-10"
               variants={{ closed: { x: reduceMotion ? 0 : '-100%', opacity: 0 }, open: { x: 0, opacity: 1 } }}
               transition={motionTransition}
