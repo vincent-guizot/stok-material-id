@@ -90,8 +90,9 @@ export const getProductById = async (req, res, next) => {
 };
 
 export const createProduct = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
     const { sku, name, categoryId, baseUnit, minStock, initialStock, units } = req.body;
 
     if (!sku || !name || !baseUnit) {
@@ -102,7 +103,7 @@ export const createProduct = async (req, res, next) => {
       });
     }
 
-    const currentStockBase = parseFloat(initialStock) || 0;
+    const currentStockBase = Number(initialStock ?? req.body.currentStockBase ?? 0);
 
     const product = await Product.create(
       {
@@ -176,18 +177,19 @@ export const createProduct = async (req, res, next) => {
       data: created,
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };
 
 export const updateProduct = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
     const { id } = req.params;
     const { sku, name, categoryId, baseUnit, minStock, currentStockBase, buyPrice, sellPrice, units } = req.body;
 
-    const product = await Product.findByPk(id, { transaction: t });
+    const product = await Product.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
     if (!product) {
       await t.rollback();
       return res.status(404).json({
@@ -209,7 +211,9 @@ export const updateProduct = async (req, res, next) => {
     // Update product units if provided or prices provided
     if (Array.isArray(units) && units.length > 0) {
       for (const u of units) {
-        if (u.id) {
+        if (!u.id) {
+          await ProductUnit.create({ ...u, productId: product.id, isBase: Number(u.conversionFactor) === 1 }, { transaction: t });
+        } else {
           await ProductUnit.update(
             {
               unitName: u.unitName,
@@ -250,7 +254,7 @@ export const updateProduct = async (req, res, next) => {
       data: updated,
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };

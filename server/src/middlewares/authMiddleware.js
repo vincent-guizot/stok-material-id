@@ -1,3 +1,4 @@
+import { jwtSecret } from '../config/auth.js';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/index.js';
 
@@ -12,7 +13,7 @@ export const authenticate = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const secret = process.env.JWT_SECRET || 'stokmaterial_secret_key_super_aman_2026';
+    const secret = jwtSecret();
 
     const decoded = jwt.verify(token, secret);
     const user = await User.findByPk(decoded.id, {

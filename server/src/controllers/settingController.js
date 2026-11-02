@@ -1,4 +1,4 @@
-import { Setting } from '../models/index.js';
+import { Setting, User } from '../models/index.js';
 
 export const getSettings = async (req, res, next) => {
   try {
@@ -27,7 +27,7 @@ export const getSettings = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: settings,
+      data: { ...settings.toJSON(), usersList: req.user?.role === 'admin' ? await User.findAll({ attributes: ['id', 'name', 'username', 'role'] }) : [] },
     });
   } catch (err) {
     next(err);
@@ -59,7 +59,6 @@ export const updateSettings = async (req, res, next) => {
       'allowMinusStock',
       'showHppCashier',
       'branches',
-      'usersList',
     ];
 
     const updates = {};
@@ -74,7 +73,7 @@ export const updateSettings = async (req, res, next) => {
     res.json({
       success: true,
       message: 'Pengaturan sistem berhasil disimpan secara permanen.',
-      data: settings,
+      data: { ...settings.toJSON(), usersList: req.user?.role === 'admin' ? await User.findAll({ attributes: ['id', 'name', 'username', 'role'] }) : [] },
     });
   } catch (err) {
     next(err);

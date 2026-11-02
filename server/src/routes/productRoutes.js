@@ -1,3 +1,5 @@
+import { validate } from '../middlewares/validate.js';
+import { authenticate } from '../middlewares/authMiddleware.js';
 import { Router } from 'express';
 import {
   getAllProducts,
@@ -8,11 +10,13 @@ import {
 } from '../controllers/productController.js';
 
 const router = Router();
+router.use(validate);
+router.param('id', (req, res, next) => validate(req, res, next));
 
-router.get('/', getAllProducts);
-router.get('/:id', getProductById);
-router.post('/', createProduct);
-router.put('/:id', updateProduct);
-router.delete('/:id', deleteProduct);
+router.get('/', authenticate, getAllProducts);
+router.get('/:id', authenticate, getProductById);
+router.post('/', authenticate, createProduct);
+router.put('/:id', authenticate, updateProduct);
+router.delete('/:id', authenticate, deleteProduct);
 
 export default router;

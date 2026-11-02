@@ -59,7 +59,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('2. Categories Endpoint Contract', () => {
     it('GET /api/v1/categories harus mengembalikan daftar kategori publik', async () => {
-      const res = await request(app).get('/api/v1/categories');
+      const res = await request(app).get('/api/v1/categories').set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -103,7 +103,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('3. Products Endpoint Contract', () => {
     it('GET /api/v1/products harus mengembalikan katalog produk lengkap dengan unit dan stok', async () => {
-      const res = await request(app).get('/api/v1/products');
+      const res = await request(app).get('/api/v1/products').set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -117,7 +117,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
     });
 
     it('GET /api/v1/products/:id harus mengembalikan rincian satu produk', async () => {
-      const res = await request(app).get(`/api/v1/products/${testData.product.id}`);
+      const res = await request(app).get(`/api/v1/products/${testData.product.id}`).set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.id).toBe(testData.product.id);
@@ -162,7 +162,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('4. Customers & Mandor Proyek Endpoint Contract', () => {
     it('GET /api/v1/customers harus mengembalikan daftar mandor beserta saldo hutang dan batas limit', async () => {
-      const res = await request(app).get('/api/v1/customers');
+      const res = await request(app).get('/api/v1/customers').set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -174,7 +174,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
     });
 
     it('GET /api/v1/customers/:id harus mengembalikan data mandor spesifik', async () => {
-      const res = await request(app).get(`/api/v1/customers/${testData.customer.id}`);
+      const res = await request(app).get(`/api/v1/customers/${testData.customer.id}`).set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.id).toBe(testData.customer.id);
@@ -210,7 +210,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
     it('GET /api/v1/transactions harus mengembalikan riwayat semua transaksi', async () => {
       const res = await request(app)
-        .get('/api/v1/transactions')
+        .get('/api/v1/transactions').set('Authorization', `Bearer ${adminToken}`)
         .set('Authorization', `Bearer ${cashierToken}`);
 
       expect(res.status).toBe(200);
@@ -221,7 +221,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
     it('GET /api/v1/transactions/:id harus mengembalikan rincian lengkap invoice transaksi', async () => {
       const res = await request(app)
-        .get(`/api/v1/transactions/${createdTransactionId}`)
+        .get(`/api/v1/transactions/${createdTransactionId}`).set('Authorization', `Bearer ${adminToken}`)
         .set('Authorization', `Bearer ${cashierToken}`);
 
       expect(res.status).toBe(200);
@@ -235,7 +235,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
   describe('6. Debts & Kasbon Mandor Contract', () => {
     it('GET /api/v1/debts/history harus mengembalikan riwayat mutasi pembayaran cicilan hutang', async () => {
       const res = await request(app)
-        .get('/api/v1/debts/history')
+        .get('/api/v1/debts/history').set('Authorization', `Bearer ${adminToken}`)
         .set('Authorization', `Bearer ${cashierToken}`);
 
       expect(res.status).toBe(200);
@@ -246,7 +246,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('7. Stocks Movements & Inbound Contract', () => {
     it('POST /api/v1/stocks/in harus berhasil menambah stok material masuk (PO Penerimaan)', async () => {
-      const res = await request(app).post('/api/v1/stocks/in').send({
+      const res = await request(app).post('/api/v1/stocks/in').set('Authorization', `Bearer ${adminToken}`).send({
         productId: testData.product.id,
         unitId: testData.unitSak.id,
         qty: 5, // 5 Sak @ 50kg = 250 Kg
@@ -260,7 +260,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
     });
 
     it('GET /api/v1/stocks/movements harus mengembalikan riwayat kartu stok mutasi', async () => {
-      const res = await request(app).get('/api/v1/stocks/movements');
+      const res = await request(app).get('/api/v1/stocks/movements').set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -271,7 +271,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
   describe('8. Reports Dashboard Summary Contract', () => {
     it('GET /api/v1/reports/summary harus mengembalikan ringkasan omset, piutang, dan stok untuk admin', async () => {
       const res = await request(app)
-        .get('/api/v1/reports/summary')
+        .get('/api/v1/reports/summary').set('Authorization', `Bearer ${adminToken}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -287,7 +287,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('9. Suppliers Endpoint Contract', () => {
     it('GET /api/v1/suppliers harus mengembalikan daftar mitra supplier', async () => {
-      const res = await request(app).get('/api/v1/suppliers');
+      const res = await request(app).get('/api/v1/suppliers').set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -295,7 +295,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
     });
 
     it('GET /api/v1/suppliers/:id harus mengembalikan rincian supplier', async () => {
-      const res = await request(app).get(`/api/v1/suppliers/${testSupplier.id}`);
+      const res = await request(app).get(`/api/v1/suppliers/${testSupplier.id}`).set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.id).toBe(testSupplier.id);
@@ -305,7 +305,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('10. System Settings Endpoint Contract', () => {
     it('GET /api/v1/settings harus mengembalikan konfigurasi toko dan struk', async () => {
-      const res = await request(app).get('/api/v1/settings');
+      const res = await request(app).get('/api/v1/settings').set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toBeDefined();
@@ -313,7 +313,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
     it('POST /api/v1/settings harus berhasil menyimpan konfigurasi toko baru', async () => {
       const res = await request(app)
-        .post('/api/v1/settings')
+        .post('/api/v1/settings').set('Authorization', `Bearer ${adminToken}`)
         .send({
           storeName: 'TB Maju Jaya Sentosa Abadi',
           storePhone: '081299988877',

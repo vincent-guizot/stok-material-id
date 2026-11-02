@@ -1,3 +1,5 @@
+import { queryClient } from '../services/queryClient.js';
+import { useCartStore } from './useCartStore.js';
 import { create } from 'zustand';
 import api from '../services/api.js';
 
@@ -25,6 +27,8 @@ export const useAuthStore = create((set) => ({
       localStorage.setItem('stokmaterial_token', token);
       localStorage.setItem('stokmaterial_user', JSON.stringify(user));
 
+      queryClient.clear();
+      useCartStore.getState().clearCart();
       set({ token, user, isLoading: false });
       return { success: true };
     } catch (err) {
@@ -42,6 +46,8 @@ export const useAuthStore = create((set) => ({
   },
 
   logout: () => {
+    queryClient.clear();
+    useCartStore.getState().clearCart();
     localStorage.removeItem('stokmaterial_token');
     localStorage.removeItem('stokmaterial_user');
     set({ user: null, token: null });

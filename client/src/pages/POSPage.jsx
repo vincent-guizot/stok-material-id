@@ -99,8 +99,8 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
   }, [items.length, handleProceed]);
 
   const subtotal = getSubtotal();
-  const discountAmount = Math.round(subtotal * (discount / 100));
-  const taxAmount = Math.round((subtotal - discountAmount) * 0.11);
+  const discountAmount = Math.min(subtotal, discount);
+  const taxAmount = 0;
   const total = subtotal - discountAmount + taxAmount;
 
   // Filtered & sorted products
@@ -336,12 +336,12 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
               <input
                 type="number"
                 min="0"
-                max="100"
+                max={subtotal}
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
                 className="w-12 text-center py-0.5 px-1 bg-[#F7F4ED] border border-[#DEDCCF] rounded text-xs font-bold text-[#252922]"
               />
-              <span className="font-bold text-xs">%</span>
+              <span className="font-bold text-xs">Rp</span>
               <span className="font-bold text-[#C62828] ml-2">
                 - {formatRupiah(discountAmount)}
               </span>
@@ -349,7 +349,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
           </div>
 
           <div className="flex justify-between text-[#625D53]">
-            <span>Pajak (PPN 11%)</span>
+            <span>Pajak</span>
             <span className="font-bold text-[#252922]">
               {formatRupiah(taxAmount)}
             </span>

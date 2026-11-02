@@ -1,8 +1,9 @@
 import { sequelize, Customer, DebtPayment, User, Transaction } from '../models/index.js';
 
 export const payDebt = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
     const { customerId, amount, paymentMethod = 'CASH', transactionId, notes } = req.body;
 
     if (!customerId) {
@@ -22,7 +23,7 @@ export const payDebt = async (req, res, next) => {
       });
     }
 
-    const customer = await Customer.findByPk(customerId, { transaction: t });
+    const customer = await Customer.findByPk(customerId, { transaction: t, lock: t.LOCK.UPDATE });
     if (!customer) {
       await t.rollback();
       return res.status(404).json({
@@ -48,6 +49,28 @@ export const payDebt = async (req, res, next) => {
       });
     }
 
+    const normalizedMethod = String(paymentMethod).toUpperCase();
+    if (!['CASH', 'TRANSFER', 'QRIS'].includes(normalizedMethod)) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Metode pembayaran tidak valid.' });
+    }
+    const invoices = await Transaction.findAll({
+      where: { customerId, ...(transactionId ? { id: transactionId } : {}) },
+      order: [['transactionDate', 'ASC'], ['id', 'ASC']], transaction: t, lock: t.LOCK.UPDATE,
+    });
+    if (transactionId && (!invoices.length || Number(invoices[0].debtAmount) < payAmount)) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Nota tidak sesuai pelanggan atau pembayaran melebihi saldo nota.' });
+    }
+    let remaining = payAmount;
+    for (const invoice of invoices) {
+      const allocation = Math.min(remaining, Number(invoice.debtAmount));
+      if (allocation <= 0) continue;
+      const debtAmount = Number(invoice.debtAmount) - allocation;
+      await invoice.update({ debtAmount, paidAmount: Number(invoice.paidAmount) + allocation,
+        paymentStatus: debtAmount <= 0 ? 'PAID' : 'PARTIAL' }, { transaction: t });
+      remaining -= allocation;
+    }
     const collectorId = req.user.id;
 
     // Buat catatan pembayaran cicilan
@@ -55,7 +78,7 @@ export const payDebt = async (req, res, next) => {
       customerId,
       transactionId: transactionId || null,
       amount: payAmount,
-      paymentMethod,
+      paymentMethod: normalizedMethod,
       receivedBy: collectorId,
       notes: notes || `Pelunasan Kasbon Mandor ${customer.name}`,
     }, { transaction: t });
@@ -83,7 +106,7 @@ export const payDebt = async (req, res, next) => {
       },
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };

@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { Transaction, TransactionItem, Customer, Product, sequelize } from '../models/index.js';
+import { Transaction, TransactionItem, Customer, Product, TransactionPayment, DebtPayment, sequelize } from '../models/index.js';
 
 export const getDashboardSummary = async (req, res, next) => {
   try {
@@ -16,7 +16,7 @@ export const getDashboardSummary = async (req, res, next) => {
 
     const summary = totalSalesResult[0] || {};
     const totalRevenue = parseFloat(summary.totalRevenue) || 0;
-    const totalCashReceived = parseFloat(summary.totalCashReceived) || 0;
+    const totalCashReceived = Number(await TransactionPayment.sum('amount', { where: { paymentMethod: { [Op.ne]: 'DEBT' } } })) + Number(await DebtPayment.sum('amount'));
     const totalDebtGiven = parseFloat(summary.totalDebtGiven) || 0;
     const transactionCount = parseInt(summary.transactionCount, 10) || 0;
 
@@ -34,11 +34,9 @@ export const getDashboardSummary = async (req, res, next) => {
 
     // 3. Produk dengan Peringatan Stok Menipis
     const lowStockProducts = await Product.findAll({
-      where: sequelize.where(
-        sequelize.col('currentStockBase'),
-        '<=',
-        sequelize.col('minStock')
-      ),
+      where: { isActive: true, [Op.and]: sequelize.where(
+        sequelize.col('currentStockBase'), '<=', sequelize.col('minStock')
+      ) },
       limit: 10,
       order: [['currentStockBase', 'ASC']],
     });
@@ -75,7 +73,7 @@ export const getDashboardSummary = async (req, res, next) => {
         totalOutstandingDebt,
         transactionCount,
         totalCustomers,
-        lowStockCount: lowStockProducts.length,
+        lowStockCount: await Product.count({ where: { isActive: true, [Op.and]: sequelize.where(sequelize.col('currentStockBase'), '<=', sequelize.col('minStock')) } }),
         lowStockProducts,
         topItems,
         recentTransactions,

@@ -108,12 +108,12 @@ export default function PrintReceiptModal({ transaction, onClose }) {
                 <div className="py-2 border-b border-dashed border-[#8C877D] text-[11px] space-y-1">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>{formatRupiah(transaction.subtotalAmount || transaction.totalAmount)}</span>
+                    <span>{formatRupiah(transaction.subtotal ?? transaction.totalAmount)}</span>
                   </div>
-                  {transaction.discountAmount > 0 && (
+                  {transaction.discount > 0 && (
                     <div className="flex justify-between text-rose-600 font-bold">
-                      <span>Diskon ({transaction.discountPercent}%):</span>
-                      <span>-{formatRupiah(transaction.discountAmount)}</span>
+                      <span>Diskon:</span>
+                      <span>-{formatRupiah(transaction.discount)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-black text-sm pt-1 border-t border-dashed border-[#8C877D]">
@@ -122,7 +122,7 @@ export default function PrintReceiptModal({ transaction, onClose }) {
                   </div>
                   <div className="flex justify-between text-[#625D53] pt-1">
                     <span>Dibayar:</span>
-                    <span>{formatRupiah(transaction.paidAmount || transaction.cashGiven || transaction.totalAmount)}</span>
+                    <span>{formatRupiah(transaction.paidAmount ?? 0)}</span>
                   </div>
                   {(transaction.change || transaction.changeAmount) > 0 && (
                     <div className="flex justify-between font-bold text-[#16845B]">

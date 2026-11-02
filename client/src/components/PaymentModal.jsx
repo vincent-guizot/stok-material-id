@@ -65,7 +65,7 @@ export default function PaymentModal({ isOpen, onClose, onSuccess }) {
     } else if (paymentType === 'SPLIT') {
       const sCash = parseFloat(splitCash) || 0;
       const sDebt = parseFloat(splitDebt) || (total - sCash);
-      if (sCash + sDebt < total) {
+      if (sCash < 0 || sDebt < 0 || Math.abs(sCash + sDebt - total) > 0.005) {
         setErrorMessage('Total uang tunai + kasbon harus sama dengan total belanja!');
         return;
       }
