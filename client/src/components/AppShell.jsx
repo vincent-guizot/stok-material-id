@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { fade, motionTransition } from './motion/presets.js';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import TopHeader from './TopHeader.jsx';
@@ -18,6 +20,7 @@ export default function AppShell({
   const { items } = useCartStore();
   const [isWholesale, setIsWholesale] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const closeMobileSidebar = useCallback(() => setIsMobileSidebarOpen(false), []);
   const [localSearch, setLocalSearch] = useState('');
 
   const location = useLocation();
@@ -126,7 +129,7 @@ export default function AppShell({
         user={user}
         cartCount={items.length}
         isOpen={isMobileSidebarOpen}
-        onClose={() => setIsMobileSidebarOpen(false)}
+        onClose={closeMobileSidebar}
       />
 
       {/* Main Content Area */}
@@ -151,6 +154,14 @@ export default function AppShell({
             currentTab === 'pos' ? 'overflow-hidden' : 'overflow-y-auto'
           }`}
         >
+          <motion.div
+            key={location.pathname}
+            className="h-full min-w-0"
+            initial="hidden"
+            animate="visible"
+            variants={fade}
+            transition={motionTransition}
+          >
           {children || (
             <Outlet
               context={{
@@ -161,6 +172,7 @@ export default function AppShell({
               }}
             />
           )}
+          </motion.div>
         </main>
       </div>
     </div>

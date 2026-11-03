@@ -1,3 +1,5 @@
+import { motion, useReducedMotion } from 'framer-motion';
+import { motionTransition } from '../components/motion/presets.js';
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -21,6 +23,7 @@ import {
 } from "lucide-react";
 
 export default function POSPage({ onProceedToPayment, globalSearch }) {
+  const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const outlet = useOutletContext() || {};
   const effectiveGlobalSearch =
@@ -659,9 +662,11 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                 const isOutOfStock = prod.currentStockBase <= 0;
 
                 return (
-                  <div
+                  <motion.div
+                    whileHover={reduceMotion ? undefined : { y: -2 }}
+                    transition={motionTransition}
                     key={prod.id}
-                    className="bg-white rounded-card border border-[#DEDCCF] p-3.5 flex flex-col justify-between shadow-card hover:border-[#234536] hover:shadow-card-hover transition relative group"
+                    className="bg-white rounded-card border border-[#DEDCCF] p-3.5 flex flex-col justify-between shadow-card hover:border-[#234536] hover:shadow-card-hover transition-shadow relative group"
                   >
                     {/* Top Terlaris Pill */}
                     {isPopular && (
@@ -742,7 +747,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                       <Plus className="w-3.5 h-3.5" />
                       <span>Tambah</span>
                     </button>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>

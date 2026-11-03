@@ -67,3 +67,21 @@
     margin: 4mm;
   }
 }
+
+/* Keep controls clear and predictable for keyboard and touch users. */
+@layer base {
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  :where(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid var(--brand-forest);
+    outline-offset: 3px;
+  }
+  button:disabled { cursor: not-allowed; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
