@@ -1,3 +1,6 @@
+import swaggerUi from 'swagger-ui-express';
+import { readFileSync } from 'node:fs';
+const openapi = JSON.parse(readFileSync(new URL('./openapi.json', import.meta.url), 'utf8'));
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -22,9 +25,12 @@ app.get("/", (req, res) => {
   res.json({
     app: "StokMaterial.id - Sistem POS Toko Bangunan API",
     status: "running",
-    docs: "/api/v1/health",
+    docs: "/api-docs",
   });
 });
+
+app.get('/api-docs.json', (req, res) => res.json(openapi));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapi));
 
 // Mount API v1
 app.use("/api/v1", routes);

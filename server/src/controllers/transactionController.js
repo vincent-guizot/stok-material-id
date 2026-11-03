@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   sequelize,
   Transaction,
@@ -11,8 +12,9 @@ import {
 } from '../models/index.js';
 
 export const checkout = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
     const {
       customerId,
       items,
@@ -35,11 +37,19 @@ export const checkout = async (req, res, next) => {
     const cashierId = req.user.id;
     let calculatedSubtotal = 0;
     const validatedItems = [];
+    const productCache = new Map();
+    const requestedStock = new Map();
+    // Stable row-lock order prevents overselling and cross-cart deadlocks.
+    const ids = [...new Set(items.map(item => item.productId))].sort();
+    for (const id of ids) {
+      const product = await Product.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+      if (product) productCache.set(id, product);
+    }
 
     // 1. Validasi stok setiap item berdasarkan satuan yang dipilih
     for (const item of items) {
-      const product = await Product.findByPk(item.productId, { transaction: t });
-      if (!product) {
+      const product = productCache.get(item.productId);
+      if (!product || !product.isActive) {
         await t.rollback();
         return res.status(404).json({
           success: false,
@@ -71,7 +81,9 @@ export const checkout = async (req, res, next) => {
       const subtotal = qty * unitPrice;
 
       // Cek apakah stok riil mencukupi
-      if (product.currentStockBase < qtyBaseUnit) {
+      const requiredStock = (requestedStock.get(product.id) || 0) + qtyBaseUnit;
+      requestedStock.set(product.id, requiredStock);
+      if (product.currentStockBase < requiredStock) {
         await t.rollback();
         return res.status(400).json({
           success: false,
@@ -95,7 +107,11 @@ export const checkout = async (req, res, next) => {
     const directDiscount = parseFloat(discount) || 0;
     const computedDiscount = pct > 0 ? (calculatedSubtotal * (pct / 100)) : directDiscount;
     const numDiscount = Math.max(0, computedDiscount);
-    const totalAmount = Math.max(0, calculatedSubtotal - numDiscount);
+    const totalAmount = Math.round(Math.max(0, calculatedSubtotal - numDiscount) * 100) / 100;
+    if (numDiscount > calculatedSubtotal) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Diskon melebihi subtotal.' });
+    }
 
     // 2. Kalkulasi pembayaran & porsi Kasbon / Piutang
     let paidAmount = 0;
@@ -108,6 +124,10 @@ export const checkout = async (req, res, next) => {
         if (amt > 0) {
           const rawMethod = (p.method || p.paymentMethod || 'CASH').toString().toUpperCase();
           const normalizedMethod = rawMethod === 'KASBON' ? 'DEBT' : rawMethod;
+          if (!['CASH', 'TRANSFER', 'QRIS', 'DEBT'].includes(normalizedMethod)) {
+            await t.rollback();
+            return res.status(400).json({ success: false, message: 'Metode pembayaran tidak valid.' });
+          }
           if (normalizedMethod === 'DEBT') {
             debtAmount += amt;
           } else {
@@ -124,6 +144,10 @@ export const checkout = async (req, res, next) => {
       // Pembayaran tunggal standar
       const rawMethod = (paymentMethod || 'CASH').toString().toUpperCase();
       const normalizedMethod = rawMethod === 'KASBON' ? 'DEBT' : rawMethod;
+      if (!['CASH', 'TRANSFER', 'QRIS', 'DEBT'].includes(normalizedMethod)) {
+        await t.rollback();
+        return res.status(400).json({ success: false, message: 'Metode pembayaran tidak valid.' });
+      }
       if (normalizedMethod === 'DEBT') {
         debtAmount = totalAmount;
         paymentRecords.push({ paymentMethod: 'DEBT', amount: totalAmount });
@@ -144,7 +168,7 @@ export const checkout = async (req, res, next) => {
         });
       }
 
-      customer = await Customer.findByPk(customerId, { transaction: t });
+      customer = await Customer.findByPk(customerId, { transaction: t, lock: t.LOCK.UPDATE });
       if (!customer) {
         await t.rollback();
         return res.status(404).json({
@@ -166,9 +190,13 @@ export const checkout = async (req, res, next) => {
       }
     }
 
+    if (Math.abs(paidAmount + debtAmount - totalAmount) > 0.005) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Total pembayaran harus sama dengan total belanja.' });
+    }
     // Status Pembayaran
     let paymentStatus = 'PAID';
-    if (debtAmount >= totalAmount) {
+    if (debtAmount > 0 && debtAmount >= totalAmount) {
       paymentStatus = 'UNPAID';
     } else if (debtAmount > 0) {
       paymentStatus = 'PARTIAL';
@@ -176,7 +204,7 @@ export const checkout = async (req, res, next) => {
 
     // Generate Invoice Number: INV-YYYYMMDD-XXXX
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const randomSuffix = randomUUID();
     const invoiceNumber = `INV-${dateStr}-${randomSuffix}`;
 
     // 4. Simpan Transaksi Penjualan
@@ -261,7 +289,7 @@ export const checkout = async (req, res, next) => {
       data: completeTransaction,
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };

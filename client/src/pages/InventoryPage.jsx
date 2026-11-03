@@ -136,13 +136,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
   const { data: suppliers = [] } = useQuery({
     queryKey: ['suppliers_list'],
     queryFn: async () => {
-      return [
-        { id: 1, name: 'PT Semen Indonesia', code: 'SI-001', category: 'Semen & Mortar' },
-        { id: 2, name: 'Toko Besi Jaya', code: 'SI-002', category: 'Besi & Baja' },
-        { id: 3, name: 'CV Sumber Bangunan', code: 'SI-003', category: 'Bata & Hebel' },
-        { id: 4, name: 'Distributor Cat Maju', code: 'SI-004', category: 'Cat & Pelapis' },
-        { id: 5, name: 'PT Rucika Indonesia', code: 'SI-005', category: 'Pipa & Sanitasi' },
-      ];
+      return (await api.get('/suppliers')).data.data;
     },
   });
 
@@ -151,7 +145,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
   const lowStockCount = products.filter((p) => p.isLowStock && p.currentStockBase > 0).length;
   const outOfStockCount = products.filter((p) => p.currentStockBase <= 0).length;
   const totalStockValue = products.reduce((acc, p) => {
-    const buyPrice = p.units?.[0]?.buyPrice || 1000;
+    const buyPrice = p.units?.find((u) => Number(u.conversionFactor) === 1)?.buyPrice || 0;
     return acc + p.currentStockBase * buyPrice;
   }, 0);
 
@@ -243,7 +237,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
   // Filtered products list
   const filteredProducts = products
     .filter((p) => {
-      if (categoryFilter !== 'all' && p.categoryId !== parseInt(categoryFilter, 10)) {
+      if (categoryFilter !== 'all' && String(p.categoryId) !== String(categoryFilter)) {
         return false;
       }
       if (statusFilter === 'safe' && (p.isLowStock || p.currentStockBase <= 0)) {
@@ -296,7 +290,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
     setIsAdjustModalOpen(true);
   };
 
-  const handleStockInSubmit = (e) => {
+  const handleStockInSubmit = async (e) => {
     e.preventDefault();
     setStockInError(null);
     if (poItems.length === 0) {
@@ -304,27 +298,25 @@ export default function InventoryPage({ subTab, setSubTab }) {
       return;
     }
 
-    const first = poItems[0];
     const newPo = {
       id: `PO-${poDate.replace(/-/g, '')}-${String(incomingPOsList.length + 1).padStart(2, '0')}`,
       date: poDate,
       supplier: poSupplier || 'Supplier Umum',
-      item: first.productName || 'Material Konstruksi',
-      qty: `${first.qty} ${first.unitName || 'Pcs'}`,
-      total: formatRupiah((parseFloat(first.qty) || 1) * (first.buyPrice || 25000)),
+      item: poItems.map((item) => item.productName).join(', '),
+      qty: poItems.map((item) => `${item.qty} ${item.unitName}`).join(', '),
+      total: formatRupiah(poItems.reduce((sum, item) => sum + Number(item.qty) * Number(item.buyPrice || 0), 0)),
       status: 'Diterima Lengkap',
     };
-    setIncomingPOsList((prev) => [newPo, ...prev]);
-
-    stockInMutation.mutate({
-      productId: first.productId,
-      unitId: first.unitId,
-      qty: parseFloat(first.qty) || 1,
+    try {
+      await stockInMutation.mutateAsync({
+      items: poItems.map((item) => ({ productId: item.productId, unitId: item.unitId, qty: Number(item.qty) })),
       notes: `${poSupplier ? `Supplier: ${poSupplier}. ` : ''}${poNotes}`,
-    });
+      });
+      setIncomingPOsList((prev) => [newPo, ...prev]);
+    } catch {}
   };
 
-  const handleAdjustSubmit = (e) => {
+  const handleAdjustSubmit = async (e) => {
     e.preventDefault();
     setAdjustError(null);
     if (!selectedProduct) return;
@@ -344,42 +336,23 @@ export default function InventoryPage({ subTab, setSubTab }) {
       reason: adjustReason || 'Opname rutin toko bangunan',
       user: 'Admin',
     };
-    setStockAdjustmentsList((prev) => [newAdj, ...prev]);
-
-    adjustMutation.mutate({
+    try { await adjustMutation.mutateAsync({
       productId: selectedProduct.id,
       actualBaseQty: qty,
       reason: adjustReason || 'Opname rutin toko bangunan',
-    });
+    }); setStockAdjustmentsList((prev) => [newAdj, ...prev]); } catch {}
   };
 
   // Initial data lists in state for interactive updates
-  const [incomingPOsList, setIncomingPOsList] = useState([
-    { id: 'PO-20261020-01', date: '20 Okt 2026', supplier: 'PT Semen Indonesia', item: 'Semen Portland 50kg', qty: '200 Sak', total: 'Rp 11.600.000', status: 'Diterima Lengkap' },
-    { id: 'PO-20261019-02', date: '19 Okt 2026', supplier: 'CV Sumber Bangunan', item: 'Bata Ringan Hebel 7.5cm', qty: '400 Pcs', total: 'Rp 3.800.000', status: 'Diterima Lengkap' },
-    { id: 'PO-20261018-03', date: '18 Okt 2026', supplier: 'Toko Besi Jaya', item: 'Besi Beton Polos 8mm', qty: '500 Batang', total: 'Rp 27.500.000', status: 'Diterima Lengkap' },
-    { id: 'PO-20261017-04', date: '17 Okt 2026', supplier: 'PT Rucika Indonesia', item: 'Pipa PVC AW 3 Inch', qty: '120 Batang', total: 'Rp 6.600.000', status: 'Diterima Lengkap' },
-  ]);
+  const [incomingPOsList, setIncomingPOsList] = useState([]);
 
-  const [outboundItemsList, setOutboundItemsList] = useState([
-    { id: 'DO-20261020-08', date: '20 Okt 2026, 14:10', dest: 'Proyek Ruko Sentosa', receiver: 'Pak Joko (Mandor)', item: 'Semen Portland (30 Sak), Besi 8mm (50 Btg)', driver: 'Budi (Colt Diesel W 8122 UZ)', status: 'Terkirim' },
-    { id: 'DO-20261020-07', date: '20 Okt 2026, 11:30', dest: 'Perumahan Graha Asri B-12', receiver: 'Pak Tono', item: 'Bata Ringan Hebel (2 Palet / 200 Pcs)', driver: 'Slamet (Pickup L300)', status: 'Terkirim' },
-    { id: 'DO-20261019-06', date: '19 Okt 2026, 16:00', dest: 'Proyek Renovasi Kantor BRI', receiver: 'Pak Haji Wahyu', item: 'Cat Dulux Putih (10 Pail), Kuas 4" (12 Pcs)', driver: 'Amir (Tossa Roda 3)', status: 'Terkirim' },
-  ]);
+  const [outboundItemsList, setOutboundItemsList] = useState([]);
 
-  const [stockMutationsList, setStockMutationsList] = useState([
-    { id: 'MUT-20261020-01', date: '20 Okt 2026', item: 'Semen Portland 50kg', from: 'Gudang Utama (G1)', to: 'Toko Depan (Rak A-01)', qty: '50 Sak', user: 'Agus (Gudang)', notes: 'Restock pajangan depan' },
-    { id: 'MUT-20261019-02', date: '19 Okt 2026', item: 'Pipa PVC AW 3 Inch', from: 'Gudang Belakang (G2)', to: 'Area Muat Pickup', qty: '30 Batang', user: 'Agus (Gudang)', notes: 'Persiapan kirim proyek' },
-    { id: 'MUT-20261018-03', date: '18 Okt 2026', item: 'Bata Ringan Hebel 7.5cm', from: 'Lapangan Terbuka', to: 'Gudang Utama (G1)', qty: '100 Pcs', user: 'Budi (Gudang)', notes: 'Pindah stok aman cuaca' },
-  ]);
+  const [stockMutationsList, setStockMutationsList] = useState([]);
 
-  const [stockAdjustmentsList, setStockAdjustmentsList] = useState([
-    { date: '20 Okt 2026', sku: 'SMN-PRT-50', item: 'Semen Portland 50kg', before: '102 Sak', actual: '100 Sak', diff: '-2 Sak', reason: 'Kantong sobek saat bongkar muat', user: 'Admin' },
-    { date: '18 Okt 2026', sku: 'BSI-BTN-08', item: 'Besi Beton Polos 8mm', before: '488 Btg', actual: '490 Btg', diff: '+2 Btg', reason: 'Selisih hitung awal penerimaan supplier', user: 'Admin' },
-    { date: '15 Okt 2026', sku: 'CAT-DLX-WHT', item: 'Cat Tembok Dulux Putih', before: '25 Pail', actual: '24 Pail', diff: '-1 Pail', reason: 'Pecah tutup kemasan', user: 'Admin' },
-  ]);
+  const [stockAdjustmentsList, setStockAdjustmentsList] = useState([]);
 
-  const handleStockOutSubmit = (e) => {
+  const handleStockOutSubmit = async (e) => {
     e.preventDefault();
     const prod = products.find((x) => x.id === outProductId || String(x.id) === String(outProductId));
     const newOut = {
@@ -391,9 +364,8 @@ export default function InventoryPage({ subTab, setSubTab }) {
       driver: outDriver || 'Kurir Toko',
       status: 'Terkirim',
     };
-    setOutboundItemsList([newOut, ...outboundItemsList]);
     if (outProductId) {
-      stockOutMutation.mutate({
+      try { await stockOutMutation.mutateAsync({
         productId: outProductId,
         qty: parseFloat(outQty) || 1,
         destination: outDest,
@@ -401,7 +373,9 @@ export default function InventoryPage({ subTab, setSubTab }) {
         driver: outDriver,
         notes: outNotes,
       });
-    }
+      setOutboundItemsList([newOut, ...outboundItemsList]);
+      } catch (err) { showToast('error', err.response?.data?.message || 'Gagal menyimpan mutasi stok.'); return; }
+    } else { showToast('error', 'Pilih produk.'); return; }
     setIsStockOutModalOpen(false);
     setOutDest('');
     setOutReceiver('');
@@ -412,12 +386,12 @@ export default function InventoryPage({ subTab, setSubTab }) {
     showToast('success', `Surat Jalan ${newOut.id} berhasil dicatat dan stok material otomatis dipotong di database!`);
   };
 
-  const handleMutationSubmit = (e) => {
+  const handleMutationSubmit = async (e) => {
     e.preventDefault();
     const prod = products.find((x) => x.id === mutProductId || String(x.id) === String(mutProductId));
     const newMut = {
       id: `MUT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(stockMutationsList.length + 1).padStart(2, '0')}`,
-      date: '20 Okt 2026',
+      date: new Date().toLocaleDateString('id-ID'),
       item: prod ? prod.name : 'Material Konstruksi',
       from: mutFrom,
       to: mutTo,
@@ -425,16 +399,17 @@ export default function InventoryPage({ subTab, setSubTab }) {
       user: 'Admin',
       notes: mutNotes || 'Mutasi stok internal',
     };
-    setStockMutationsList([newMut, ...stockMutationsList]);
     if (mutProductId) {
-      stockTransferMutation.mutate({
+      try { await stockTransferMutation.mutateAsync({
         productId: mutProductId,
         qty: parseFloat(mutQty) || 1,
         fromLocation: mutFrom,
         toLocation: mutTo,
         notes: mutNotes,
       });
-    }
+      setStockMutationsList([newMut, ...stockMutationsList]);
+      } catch (err) { showToast('error', err.response?.data?.message || 'Gagal menyimpan mutasi stok.'); return; }
+    } else { showToast('error', 'Pilih produk.'); return; }
     setIsMutationModalOpen(false);
     setMutProductId('');
     setMutQty('');
@@ -450,16 +425,11 @@ export default function InventoryPage({ subTab, setSubTab }) {
     }
   };
 
-  const stockOpnameList = [
-    { sku: 'SMN-PRT-50', name: 'Semen Portland 50kg', location: 'Gudang Depan (A1-01)', systemStock: '100 Sak', physicalStock: '100 Sak', status: 'Cocok', diff: '0' },
-    { sku: 'BTA-HBL-75', name: 'Bata Ringan Hebel 7.5cm', location: 'Gudang Belakang (B2-04)', systemStock: '450 Pcs', physicalStock: '445 Pcs', status: 'Selisih', diff: '-5 Pcs' },
-    { sku: 'BSI-BTN-08', name: 'Besi Beton Polos 8mm', location: 'Rak Besi Luar (C1)', systemStock: '490 Btg', physicalStock: '490 Btg', status: 'Cocok', diff: '0' },
-    { sku: 'PPA-PVC-03', name: 'Pipa PVC AW 3 Inch', location: 'Gudang Pipa (D1-02)', systemStock: '85 Btg', physicalStock: '84 Btg', status: 'Selisih', diff: '-1 Btg' },
-    { sku: 'CAT-DLX-WHT', name: 'Cat Tembok Dulux Putih', location: 'Toko Depan (Rak Cat)', systemStock: '24 Pail', physicalStock: '24 Pail', status: 'Cocok', diff: '0' },
-  ];
+  const stockOpnameList = products.map((p) => ({ sku: p.sku, name: p.name, location: '—', systemStock: `${p.currentStockBase} ${p.baseUnit}`, physicalStock: 'Belum dihitung', status: 'Belum dihitung', diff: '—' }));
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+      <p className="p-3 bg-amber-50 border rounded-lg text-xs">Perubahan stok tersimpan di server. Ringkasan PO, surat jalan, dan opname di halaman ini hanya untuk sesi ini; saldo per gudang belum tersedia.</p>
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -528,7 +498,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
           icon={Package}
           iconBg="bg-emerald-50 text-[#16845B]"
           title="Total Produk"
-          value={`${totalProductsCount || 256} Item`}
+          value={`${totalProductsCount} Item`}
           subtitle="180 Aktif • 76 Non-aktif"
         />
 
@@ -536,7 +506,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
           icon={Boxes}
           iconBg="bg-amber-50 text-[#D97706]"
           title="Total Nilai Stok"
-          value={formatRupiah(totalStockValue || 1245800000)}
+          value={formatRupiah(totalStockValue)}
           subtitle="Berdasarkan harga rata-rata"
           trend="12%"
           trendType="up"
@@ -546,7 +516,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
           icon={AlertTriangle}
           iconBg="bg-amber-50 text-[#D97706]"
           title="Stok Menipis"
-          value={`${lowStockCount || 18} Item`}
+          value={`${lowStockCount} Item`}
           subtitle="Perlu segera restock"
         />
 
@@ -554,7 +524,7 @@ export default function InventoryPage({ subTab, setSubTab }) {
           icon={XCircle}
           iconBg="bg-rose-50 text-[#C62828]"
           title="Stok Habis"
-          value={`${outOfStockCount || 6} Item`}
+          value={`${outOfStockCount} Item`}
           subtitle="Tidak tersedia"
         />
       </div>

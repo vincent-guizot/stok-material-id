@@ -71,7 +71,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
       try {
         const text = evt.target.result;
         const lines = text.split(/\r?\n/).filter(Boolean);
-        showToast('success', `Berhasil membaca file ${file.name} (${lines.length - 1} baris material). Data siap disinkronkan!`);
+        showToast('success', `Berhasil membaca file ${file.name} (${lines.length - 1} baris material). Impor ke database belum tersedia; belum ada data yang disimpan.`);
       } catch {
         showToast('error', 'Gagal memproses file CSV import.');
       }
@@ -389,63 +389,31 @@ export default function MasterDataPage({ subTab, setSubTab }) {
   ];
 
   // Dynamic master data states
-  const [brands, setBrands] = useState([
-    { name: 'Semen Gresik', category: 'Semen & Mortar', count: 8, origin: 'PT Semen Indonesia' },
-    { name: 'Tiga Roda', category: 'Semen & Mortar', count: 6, origin: 'PT Indocement Tunggal Prakarsa' },
-    { name: 'Citicon', category: 'Bata & Hebel', count: 12, origin: 'PT Citicon Nusantara Industries' },
-    { name: 'Krakatau Steel (KS)', category: 'Besi & Baja', count: 18, origin: 'PT Krakatau Steel' },
-    { name: 'Rucika', category: 'Pipa & Sanitasi', count: 24, origin: 'PT Wahana Duta Jaya Rucika' },
-    { name: 'Dulux', category: 'Cat & Pelapis', count: 32, origin: 'PT ICI Paints Indonesia' },
-    { name: 'Avian', category: 'Cat & Pelapis', count: 28, origin: 'PT Avia Avian Tbk' },
-  ]);
+  const [brands, setBrands] = useState([]);
 
-  const [unitConversions, setUnitConversions] = useState([
-    { baseUnit: 'Kg (Kilogram)', upperUnit: 'Sak (50 Kg)', factor: 50, category: 'Semen', description: '1 Sak = 50 Kg semen murni' },
-    { baseUnit: 'Meter', upperUnit: 'Batang (12 Meter)', factor: 12, category: 'Besi Beton', description: '1 Batang SNI = 12 Meter' },
-    { baseUnit: 'Pcs', upperUnit: 'Palet (100 Pcs)', factor: 100, category: 'Bata Ringan Hebel', description: '1 Palet pabrik = 100 Pcs hebel' },
-    { baseUnit: 'Batang', upperUnit: 'Ikat (25 Batang)', factor: 25, category: 'Baja Ringan / Reng', description: '1 Ikat = 25 Batang profil C / Reng' },
-    { baseUnit: 'Liter', upperUnit: 'Pail (20 Liter)', factor: 20, category: 'Cat Tembok', description: '1 Pail besar = 20 Liter' },
-  ]);
+  const [unitConversions, setUnitConversions] = useState([]);
 
-  const [wholesaleRules, setWholesaleRules] = useState([
-    { name: 'Grosir Semen Partai Besar', minQty: '50 Sak', discount: 'Diskon Rp 2.000 / Sak', target: 'Mandor & Kontraktor' },
-    { name: 'Grosir Bata Ringan Hebel', minQty: '5 Palet (500 Pcs)', discount: 'Diskon 5%', target: 'Proyek Ruko & Rumah' },
-    { name: 'Grosir Besi Beton SNI', minQty: '100 Batang', discount: 'Diskon Rp 3.500 / Btg', target: 'Mandor Struktur' },
-    { name: 'Grosir Pipa PVC AW', minQty: '20 Batang', discount: 'Diskon 8%', target: 'Instalatir Plumbing' },
-  ]);
+  const [wholesaleRules, setWholesaleRules] = useState([]);
 
-  const customerList = serverCustomers.length > 0
-    ? serverCustomers.map((c) => ({
+  const customerList = serverCustomers.map((c) => ({
         name: c.name,
         phone: c.phone || '-',
         address: c.address || '-',
         limit: formatRupiah(c.creditLimit || 0),
         type: (c.creditLimit || 0) > 0 ? 'Mandor Prioritas' : 'Pelanggan Umum',
-      }))
-    : [
-        { name: 'Pak Joko (Ruko Sentosa)', phone: '0812-3456-7890', address: 'Jl. Ahmad Yani No. 45, Gresik', limit: 'Rp 50.000.000', type: 'Mandor Prioritas' },
-        { name: 'Pak Tono (Perum Graha Asri)', phone: '0813-9876-5432', address: 'Perum Graha Asri Blok B-12', limit: 'Rp 30.000.000', type: 'Mandor Kontraktor' },
-        { name: 'Pak Haji Wahyu', phone: '0821-5555-1234', address: 'Proyek Renovasi Kantor BRI', limit: 'Rp 75.000.000', type: 'Mandor Proyek' },
-        { name: 'CV Mandiri Karya', phone: '0857-1111-2222', address: 'Kawasan Industri Gresik', limit: 'Rp 40.000.000', type: 'Perusahaan Konstruksi' },
-      ];
+      }));
 
-  const supplierList = serverSuppliers.length > 0
-    ? serverSuppliers.map((s, idx) => ({
+  const supplierList = serverSuppliers.map((s, idx) => ({
         code: `SUP-${String(idx + 1).padStart(3, '0')}`,
         name: s.name,
         category: s.category || 'Bahan Bangunan',
         phone: s.phone || '-',
         address: s.address || '-',
-      }))
-    : [
-        { name: 'PT Semen Indonesia', code: 'SUP-001', category: 'Semen & Mortar', phone: '031-3981732', address: 'Gresik, Jawa Timur' },
-        { name: 'Toko Besi Jaya', code: 'SUP-002', category: 'Besi & Baja', phone: '031-7482910', address: 'Surabaya Barat' },
-        { name: 'CV Sumber Bangunan', code: 'SUP-003', category: 'Bata & Hebel', phone: '031-8923011', address: 'Krian, Sidoarjo' },
-        { name: 'Distributor Cat Maju', code: 'SUP-004', category: 'Cat & Pelapis', phone: '031-5619283', address: 'Surabaya Pusat' },
-      ];
+      }));
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+      {['brands', 'units', 'wholesale'].includes(activeTabKey) && <p role="status" className="p-3 bg-amber-50 border rounded-lg text-sm">Daftar ini merupakan referensi sesi ini. Belum tersimpan di server dan belum diterapkan otomatis ke harga POS. Konversi transaksi memakai satuan per produk.</p>}
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -511,15 +479,15 @@ export default function MasterDataPage({ subTab, setSubTab }) {
           icon={Database}
           iconBg="bg-emerald-50 text-[#16845B]"
           title="Total Produk"
-          value={`${products.length || 256} Item`}
-          subtitle="180 Aktif • 76 Non-aktif"
+          value={`${products.length} Item`}
+          subtitle="Material dalam katalog"
         />
 
         <StatCard
           icon={Layers}
           iconBg="bg-amber-50 text-[#D97706]"
           title="Kategori Aktif"
-          value={`${categories.length || 27} Kategori`}
+          value={`${categories.length} Kategori`}
           subtitle="Aktif digunakan"
         />
 

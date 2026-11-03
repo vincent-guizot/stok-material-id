@@ -19,6 +19,7 @@ export default function Sidebar({
   activeTab,
   setActiveTab,
   setSubTab,
+  user,
   cartCount = 0,
   isOpen = false,
   onClose,
@@ -158,7 +159,7 @@ export default function Sidebar({
 
       {/* Navigation List - Without Dropdown Accordions */}
       <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {navItems.filter((item) => user?.role === 'admin' || !['reports', 'settings'].includes(item.id)).map((item) => {
           const Icon = item.icon;
           const isActive =
             effectiveActiveTab === item.id ||

@@ -10,6 +10,9 @@ import {
 import { ensureDatabaseExists } from '../../src/config/database.js';
 
 export async function setupTestDatabase() {
+  if (process.env.NODE_ENV !== 'test' || !/test/i.test(process.env.DB_NAME_TEST || 'stokmaterial_test_db')) {
+    throw new Error('Destructive tests require NODE_ENV=test and a DB_NAME_TEST containing test.');
+  }
   await ensureDatabaseExists();
   await sequelize.sync({ force: true });
 

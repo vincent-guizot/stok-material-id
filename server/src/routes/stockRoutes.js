@@ -1,3 +1,5 @@
+import { validate } from '../middlewares/validate.js';
+import { authenticate } from '../middlewares/authMiddleware.js';
 import { Router } from 'express';
 import {
   addStock,
@@ -8,11 +10,13 @@ import {
 } from '../controllers/stockController.js';
 
 const router = Router();
+router.use(validate);
+router.param('id', (req, res, next) => validate(req, res, next));
 
-router.post('/in', addStock);
-router.post('/out', outStock);
-router.post('/transfer', transferStock);
-router.post('/adjust', adjustStock);
-router.get('/movements', getMovements);
+router.post('/in', authenticate, addStock);
+router.post('/out', authenticate, outStock);
+router.post('/transfer', authenticate, transferStock);
+router.post('/adjust', authenticate, adjustStock);
+router.get('/movements', authenticate, getMovements);
 
 export default router;

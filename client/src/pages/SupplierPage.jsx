@@ -86,11 +86,11 @@ export default function SupplierPage() {
     city: s.address?.split(',')?.[1]?.trim() || 'Gresik',
     category: s.category || 'Umum',
     status: (s.status || 'Aktif').toLowerCase(),
-    totalPurchases: 25000000 + idx * 15000000,
-    trxCount: 4 + idx,
-    lastTrxDate: '15 Okt 2026',
-    lastTrxAmount: 5000000,
-    npwp: '01.234.567.8-901.000',
+    totalPurchases: 0,
+    trxCount: 0,
+    lastTrxDate: 'Belum tersedia',
+    lastTrxAmount: 0,
+    npwp: 'Belum tersedia',
     termDays: parseInt(s.paymentTerms?.match(/\d+/)?.[0] || '30', 10),
     address: s.address || '-',
     email: s.email || '-',
@@ -232,9 +232,8 @@ export default function SupplierPage() {
           icon={Building2}
           iconBg="bg-emerald-50 text-[#16845B]"
           title="Total Supplier"
-          value="24 Supplier"
-          subtitle="2 Supplier baru (30 hari)"
-          trend="9%"
+          value={`${suppliers.length} Supplier`}
+          subtitle="Data mitra tersimpan"
           trendType="up"
         />
 
@@ -242,9 +241,8 @@ export default function SupplierPage() {
           icon={CheckCircle2}
           iconBg="bg-amber-50 text-[#D97706]"
           title="Supplier Aktif"
-          value="22 Supplier"
-          subtitle="91% dari total"
-          trend="5%"
+          value={`${suppliers.filter((s) => s.status === 'aktif').length} Supplier`}
+          subtitle="Status aktif"
           trendType="up"
         />
 
@@ -252,9 +250,8 @@ export default function SupplierPage() {
           icon={Ban}
           iconBg="bg-rose-50 text-[#C62828]"
           title="Supplier Non-aktif"
-          value="2 Supplier"
+          value={`${suppliers.filter((s) => s.status !== 'aktif').length} Supplier`}
           subtitle="Tidak ada perubahan"
-          trend="0%"
           trendType="neutral"
         />
 
@@ -262,9 +259,8 @@ export default function SupplierPage() {
           icon={DollarSign}
           iconBg="bg-emerald-50 text-[#16845B]"
           title="Total Pembelian"
-          value="Rp 287.450.000"
-          subtitle="Oktober 2026"
-          trend="18%"
+          value="Belum tersedia"
+          subtitle="Pencatatan pembelian belum tersedia"
           trendType="up"
         />
       </div>
@@ -373,7 +369,7 @@ export default function SupplierPage() {
                         <StatusBadge status={s.status} />
                       </td>
                       <td className="py-3 px-3 text-right font-black text-[#252922]">
-                        {formatRupiah(s.totalPurchases)}
+                        {'Belum tersedia'}
                       </td>
                       <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
@@ -497,7 +493,7 @@ export default function SupplierPage() {
                   <div className="p-3 bg-emerald-50 rounded-control border border-emerald-200">
                     <div className="text-[10px] text-[#16845B] font-bold">Total Pembelian</div>
                     <div className="text-sm font-black text-[#16845B] mt-0.5">
-                      {formatRupiah(selectedSupplier.totalPurchases)}
+                      {'Belum tersedia'}
                     </div>
                     <div className="text-[10px] text-[#625D53] mt-0.5">({selectedSupplier.trxCount} transaksi)</div>
                   </div>

@@ -130,3 +130,57 @@ PASS __tests__/auth.test.js
 Test Suites: 2 passed, 2 total
 Tests:       9 passed, 9 total
 ```
+
+## Swagger dan validasi API
+
+Gunakan Node.js 24 dan PostgreSQL. Salin `server/.env.example` menjadi `server/.env`, lalu sesuaikan kredensial database dan `JWT_SECRET`.
+
+```bash
+npm ci --prefix server
+npm ci --prefix client
+npm --prefix server start
+npm --prefix client run dev
+```
+
+Swagger UI: http://localhost:5000/api-docs/
+
+OpenAPI JSON: http://localhost:5000/api-docs.json (`server/src/openapi.json`). Dokumentasi mencakup 40 operasi API kanonis; `/api` merupakan alias `/api/v1`. Login melalui `POST /auth/login`, salin `data.token`, lalu klik **Authorize** dan masukkan token JWT. Seluruh data bisnis membutuhkan login. Pendaftaran/manajemen pengguna, perubahan pengaturan, dan laporan ringkasan membutuhkan admin.
+
+### Pengujian otomatis
+
+**Penting:** suite API dan browser menghapus serta membuat ulang tabel pada database pengujian. Gunakan database kosong terpisah dengan nama mengandung `test`; jangan gunakan database aplikasi. Variabel `DB_NAME_TEST` default `stokmaterial_test_db`; koneksi cloud `DATABASE_URL` tidak dipakai oleh mode test.
+
+```bash
+npm --prefix server test
+npm --prefix client run lint
+npm --prefix client run build
+```
+
+Browser smoke test memerlukan `NODE_ENV=test`, database pengujian yang sama, Chromium Playwright, dan port 3000/5000 kosong. Script otomatis menjalankan API dan Vite, mengisi fixture, login, membuka halaman utama, mencoba tab laporan, dan memverifikasi sesi kedaluwarsa.
+
+```bash
+# macOS/Linux
+NODE_ENV=test npm --prefix client run test:e2e
+```
+
+```powershell
+# Windows PowerShell
+$env:NODE_ENV='test'
+npm --prefix client run test:e2e
+Remove-Item Env:NODE_ENV
+```
+
+Instal browser sekali dengan `npx --prefix client playwright install chromium`. Workflow `.github/workflows/validation.yml` menjalankan API tests, build/lint, dan browser smoke test dengan PostgreSQL 17.
+
+### Kontrak transaksi dan batas fitur
+
+- `discount` adalah potongan **rupiah** di POS, checkout, API, dan struk. API juga menerima `discountPercent` (0–100; diprioritaskan bila positif). Tidak ada penambahan pajak otomatis: backend belum memiliki pencatatan pajak.
+- Pembayaran yang didukung: `CASH`, `TRANSFER`, `QRIS`, `DEBT` (`KASBON` adalah alias). Jumlah semua pembayaran harus sama dengan total nota. Kembalian tunai hanya informasi UI; jangan masukkan uang lebih sebagai nominal pembayaran nota.
+- Stok diperiksa kumulatif untuk semua baris produk, dikunci dalam transaksi, dan tidak boleh negatif. Mutasi antar lokasi hanya catatan perpindahan; saldo stok per gudang belum tersedia.
+- Pembayaran piutang memperbarui saldo pelanggan dan nota terkait (FIFO jika tanpa `transactionId`). Saldo piutang awal tanpa nota tetap dapat dibayar sebagai saldo pelanggan.
+- Akun dan perubahan password pada Pengaturan menggunakan tabel pengguna sebenarnya. JSON `settings.usersList` lama tidak lagi menjadi sumber akun login. Pengguna dengan transaksi historis mungkin tidak dapat dihapus karena relasi database.
+- Laporan menampilkan data API, termasuk nilai nol. Daftar penjualan dibatasi 1.000 transaksi terbaru; ringkasan mencakup seluruh periode. Nilai stok memakai harga beli satuan dasar saat ini, bukan HPP historis.
+- Pembelian, biaya operasional, laba rugi lengkap, dan saldo kas per rekening belum memiliki backend. Angka contoh untuk fitur tersebut telah dihapus dari laporan. Ekspor pada Pengaturan hanya konfigurasi JSON, bukan backup database.
+- Untuk frontend dan API yang di-host terpisah, set `VITE_API_URL` saat build. Untuk origin yang sama, reverse proxy `/api` ke backend dan arahkan route SPA ke `index.html`.
+
+Hasil audit, bukti pengujian, dan fitur yang masih belum lengkap: [docs/API_AUDIT.md](docs/API_AUDIT.md). Ringkasan PO/surat jalan/opname dan referensi merek/grosir belum menjadi data backend persisten; tampilan sekarang memberi penjelasan agar tidak dianggap sebagai fitur produksi lengkap.

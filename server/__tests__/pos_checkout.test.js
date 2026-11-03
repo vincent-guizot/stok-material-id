@@ -24,7 +24,7 @@ describe('POS Checkout & Konversi Multi-Satuan Test', () => {
   });
 
   it('Harus berhasil mengambil katalog produk dengan informasi satuan bertingkat', async () => {
-    const res = await request(app).get('/api/v1/products');
+    const res = await request(app).get('/api/v1/products').set('Authorization', `Bearer ${kasirToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);

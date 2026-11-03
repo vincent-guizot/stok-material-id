@@ -11,7 +11,7 @@ let sequelize;
 
 // Helper untuk memastikan database lokal sudah dibuat
 export async function ensureDatabaseExists(customDbName) {
-  if (neonUrl) return;
+  if (neonUrl && !isTest) return;
 
   const dbHost = process.env.DB_HOST || "127.0.0.1";
   const dbPort = process.env.DB_PORT || 5432;
@@ -38,7 +38,7 @@ export async function ensureDatabaseExists(customDbName) {
       [targetDb],
     );
     if (checkRes.rowCount === 0) {
-      await client.query(`CREATE DATABASE "${targetDb}"`);
+      await client.query(`CREATE DATABASE "${targetDb.replaceAll('"', '""')}"`);
       console.log(
         `[Database] Database '${targetDb}' berhasil dibuat di PostgreSQL lokal.`,
       );

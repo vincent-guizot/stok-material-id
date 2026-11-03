@@ -1,8 +1,32 @@
 import { sequelize, Product, ProductUnit, StockMovement } from '../models/index.js';
 
 export const addStock = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
+    if (Array.isArray(req.body.items)) {
+      if (!req.body.items.length) { await t.rollback(); return res.status(400).json({ success: false, message: 'Daftar barang masuk kosong.' }); }
+      const entries = [];
+      for (const item of [...req.body.items].sort((a, b) => String(a.productId).localeCompare(String(b.productId)))) {
+        if (!item.productId || !Number.isFinite(Number(item.qty)) || Number(item.qty) <= 0) {
+          await t.rollback();
+          return res.status(400).json({ success: false, message: 'Produk dan qty positif wajib diisi.' });
+        }
+        const product = await Product.findByPk(item.productId, { transaction: t, lock: t.LOCK.UPDATE });
+        if (!product) { await t.rollback(); return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' }); }
+        const unit = item.unitId ? await ProductUnit.findByPk(item.unitId, { transaction: t }) : null;
+        if (item.unitId && (!unit || unit.productId !== product.id)) { await t.rollback(); return res.status(400).json({ success: false, message: 'Satuan tidak sesuai produk.' }); }
+        const qtyBaseUnit = Number(item.qty) * Number(unit?.conversionFactor || 1);
+        const previousStock = product.currentStockBase;
+        const newStock = previousStock + qtyBaseUnit;
+        await product.update({ currentStockBase: newStock }, { transaction: t });
+        const movement = await StockMovement.create({ productId: product.id, type: 'IN', qtyBaseUnit,
+          previousStock, newStock, notes: req.body.notes || 'Penerimaan beberapa material', createdBy: req.user.id }, { transaction: t });
+        entries.push({ product, movement });
+      }
+      await t.commit();
+      return res.status(201).json({ success: true, data: { entries } });
+    }
     const { productId, unitId, qty, notes } = req.body;
 
     if (!productId || !qty) {
@@ -13,7 +37,7 @@ export const addStock = async (req, res, next) => {
       });
     }
 
-    const product = await Product.findByPk(productId, { transaction: t });
+    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
     if (!product) {
       await t.rollback();
       return res.status(404).json({
@@ -26,8 +50,12 @@ export const addStock = async (req, res, next) => {
     let unitName = product.baseUnit;
 
     if (unitId) {
-      const unit = await ProductUnit.findByPk(unitId, { transaction: t });
-      if (unit && unit.productId === product.id) {
+      const unit = await ProductUnit.findByPk(unitId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!unit || unit.productId !== product.id) {
+        await t.rollback();
+        return res.status(400).json({ success: false, message: 'Satuan tidak valid untuk produk ini.' });
+      }
+      if (unit) {
         conversionFactor = parseFloat(unit.conversionFactor);
         unitName = unit.unitName;
       }
@@ -38,7 +66,7 @@ export const addStock = async (req, res, next) => {
     const prevStock = product.currentStockBase;
     const newStock = prevStock + addedBaseQty;
 
-    await product.update({ currentStockBase: newStock }, { transaction: t });
+    await product.update({ currentStockBase: newStock }, { transaction: t, lock: t.LOCK.UPDATE });
 
     const movement = await StockMovement.create(
       {
@@ -50,7 +78,7 @@ export const addStock = async (req, res, next) => {
         notes: notes || `Penerimaan Barang Masuk: ${numQty} ${unitName}`,
         createdBy: req.user ? req.user.id : null,
       },
-      { transaction: t }
+      { transaction: t, lock: t.LOCK.UPDATE }
     );
 
     await t.commit();
@@ -64,14 +92,15 @@ export const addStock = async (req, res, next) => {
       },
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };
 
 export const outStock = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
     const { productId, unitId, qty, destination, receiver, driver, notes } = req.body;
 
     if (!productId || !qty) {
@@ -82,7 +111,7 @@ export const outStock = async (req, res, next) => {
       });
     }
 
-    const product = await Product.findByPk(productId, { transaction: t });
+    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
     if (!product) {
       await t.rollback();
       return res.status(404).json({
@@ -95,8 +124,12 @@ export const outStock = async (req, res, next) => {
     let unitName = product.baseUnit;
 
     if (unitId) {
-      const unit = await ProductUnit.findByPk(unitId, { transaction: t });
-      if (unit && unit.productId === product.id) {
+      const unit = await ProductUnit.findByPk(unitId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!unit || unit.productId !== product.id) {
+        await t.rollback();
+        return res.status(400).json({ success: false, message: 'Satuan tidak valid untuk produk ini.' });
+      }
+      if (unit) {
         conversionFactor = parseFloat(unit.conversionFactor);
         unitName = unit.unitName;
       }
@@ -105,9 +138,13 @@ export const outStock = async (req, res, next) => {
     const numQty = parseFloat(qty);
     const deductedBaseQty = numQty * conversionFactor;
     const prevStock = product.currentStockBase;
-    const newStock = Math.max(0, prevStock - deductedBaseQty);
+    if (deductedBaseQty > prevStock) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Stok tidak mencukupi.' });
+    }
+    const newStock = prevStock - deductedBaseQty;
 
-    await product.update({ currentStockBase: newStock }, { transaction: t });
+    await product.update({ currentStockBase: newStock }, { transaction: t, lock: t.LOCK.UPDATE });
 
     const noteDetails = [
       destination ? `Tujuan: ${destination}` : '',
@@ -126,7 +163,7 @@ export const outStock = async (req, res, next) => {
         notes: `Pengeluaran Material (${numQty} ${unitName}): ${noteDetails}`,
         createdBy: req.user ? req.user.id : null,
       },
-      { transaction: t }
+      { transaction: t, lock: t.LOCK.UPDATE }
     );
 
     await t.commit();
@@ -140,14 +177,15 @@ export const outStock = async (req, res, next) => {
       },
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };
 
 export const transferStock = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
     const { productId, unitId, qty, fromLocation, toLocation, notes } = req.body;
 
     if (!productId || !qty) {
@@ -158,7 +196,7 @@ export const transferStock = async (req, res, next) => {
       });
     }
 
-    const product = await Product.findByPk(productId, { transaction: t });
+    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
     if (!product) {
       await t.rollback();
       return res.status(404).json({
@@ -171,8 +209,12 @@ export const transferStock = async (req, res, next) => {
     let unitName = product.baseUnit;
 
     if (unitId) {
-      const unit = await ProductUnit.findByPk(unitId, { transaction: t });
-      if (unit && unit.productId === product.id) {
+      const unit = await ProductUnit.findByPk(unitId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!unit || unit.productId !== product.id) {
+        await t.rollback();
+        return res.status(400).json({ success: false, message: 'Satuan tidak valid untuk produk ini.' });
+      }
+      if (unit) {
         conversionFactor = parseFloat(unit.conversionFactor);
         unitName = unit.unitName;
       }
@@ -180,6 +222,10 @@ export const transferStock = async (req, res, next) => {
 
     const numQty = parseFloat(qty);
     const baseQty = numQty * conversionFactor;
+    if (baseQty > product.currentStockBase) {
+      await t.rollback();
+      return res.status(400).json({ success: false, message: 'Stok tidak mencukupi untuk mutasi.' });
+    }
 
     const movement = await StockMovement.create(
       {
@@ -191,7 +237,7 @@ export const transferStock = async (req, res, next) => {
         notes: `Mutasi dari [${fromLocation || 'Gudang Utama'}] ke [${toLocation || 'Toko'}] (${numQty} ${unitName}): ${notes || 'Mutasi internal'}`,
         createdBy: req.user ? req.user.id : null,
       },
-      { transaction: t }
+      { transaction: t, lock: t.LOCK.UPDATE }
     );
 
     await t.commit();
@@ -205,14 +251,15 @@ export const transferStock = async (req, res, next) => {
       },
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };
 
 export const adjustStock = async (req, res, next) => {
-  const t = await sequelize.transaction();
+  let t;
   try {
+    t = await sequelize.transaction();
     const { productId, actualBaseQty, reason } = req.body;
 
     if (!productId || actualBaseQty === undefined) {
@@ -223,7 +270,7 @@ export const adjustStock = async (req, res, next) => {
       });
     }
 
-    const product = await Product.findByPk(productId, { transaction: t });
+    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
     if (!product) {
       await t.rollback();
       return res.status(404).json({
@@ -236,7 +283,7 @@ export const adjustStock = async (req, res, next) => {
     const prevStock = product.currentStockBase;
     const difference = targetStock - prevStock;
 
-    await product.update({ currentStockBase: targetStock }, { transaction: t });
+    await product.update({ currentStockBase: targetStock }, { transaction: t, lock: t.LOCK.UPDATE });
 
     const movement = await StockMovement.create(
       {
@@ -248,7 +295,7 @@ export const adjustStock = async (req, res, next) => {
         notes: reason || `Penyesuaian Fisik Opname (Selisih: ${difference >= 0 ? '+' : ''}${difference} ${product.baseUnit})`,
         createdBy: req.user ? req.user.id : null,
       },
-      { transaction: t }
+      { transaction: t, lock: t.LOCK.UPDATE }
     );
 
     await t.commit();
@@ -262,7 +309,7 @@ export const adjustStock = async (req, res, next) => {
       },
     });
   } catch (err) {
-    await t.rollback();
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 };

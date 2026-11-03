@@ -73,9 +73,8 @@ export default function DebtLedgerPage() {
 
   // Calculate stats
   const totalDebt = customers.reduce((sum, c) => sum + (parseFloat(c.currentDebt) || 0), 0);
-  const overdueDebt = Math.round(totalDebt * 0.22); // 22% approaching/overdue estimate
   const overLimitCount = customers.filter(
-    (c) => parseFloat(c.currentDebt) > parseFloat(c.creditLimit)
+    (c) => parseFloat(c.creditLimit) > 0 && parseFloat(c.currentDebt) > parseFloat(c.creditLimit)
   ).length;
 
   // Filter & sort
@@ -262,9 +261,8 @@ export default function DebtLedgerPage() {
           icon={BookOpen}
           iconBg="bg-emerald-50 text-[#16845B]"
           title="Total Piutang Mandor"
-          value={formatRupiah(totalDebt || 152450000)}
+          value={formatRupiah(totalDebt)}
           subtitle={`${customers.length} Mandor aktif`}
-          trend="8%"
           trendType="up"
         />
 
@@ -272,9 +270,8 @@ export default function DebtLedgerPage() {
           icon={Clock}
           iconBg="bg-amber-50 text-[#D97706]"
           title="Piutang Jatuh Tempo"
-          value={formatRupiah(overdueDebt || 28350000)}
-          subtitle="5 Mandor"
-          trend="15%"
+          value="Belum tersedia"
+          subtitle="Memerlukan jatuh tempo nota"
           trendType="down"
         />
 
@@ -282,9 +279,8 @@ export default function DebtLedgerPage() {
           icon={CheckCircle2}
           iconBg="bg-emerald-50 text-[#16845B]"
           title="Lunas Bulan Ini"
-          value="Rp 45.200.000"
-          subtitle="23 Transaksi"
-          trend="12%"
+          value="Belum tersedia"
+          subtitle="Lihat riwayat pembayaran"
           trendType="up"
         />
 
@@ -292,7 +288,7 @@ export default function DebtLedgerPage() {
           icon={AlertTriangle}
           iconBg="bg-rose-50 text-[#C62828]"
           title="Melebihi Limit"
-          value={`${overLimitCount || 2} Mandor`}
+          value={`${overLimitCount} Mandor`}
           subtitle="Perlu segera ditindaklanjuti"
         />
       </div>
@@ -630,19 +626,19 @@ export default function DebtLedgerPage() {
                   <div className="bg-[#F7F4ED] rounded-control p-3 space-y-1.5 border border-[#DEDCCF]">
                     <div className="flex justify-between">
                       <span className="text-[#625D53]">Jumlah Transaksi:</span>
-                      <span className="font-bold">18 Transaksi</span>
+                      <span className="font-bold">Belum tersedia</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-[#625D53]">Terakhir Transaksi:</span>
-                      <span className="font-bold">20 Okt 2026, 09:15</span>
+                      <span className="font-bold">Belum tersedia</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-[#625D53]">Terakhir Pembayaran:</span>
-                      <span className="font-bold">12 Okt 2026, 14:30</span>
+                      <span className="font-bold">Belum tersedia</span>
                     </div>
                     <div className="border-t border-[#DEDCCF] pt-1">
                       <span className="text-[#625D53]">Catatan: </span>
-                      <span className="font-medium text-[#252922]">Pembelian material untuk proyek renovasi ruko.</span>
+                      <span className="font-medium text-[#252922]">—</span>
                     </div>
                   </div>
                 </div>

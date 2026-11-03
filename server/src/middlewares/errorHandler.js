@@ -19,7 +19,10 @@ export const errorHandler = (err, req, res, next) => {
     });
   }
 
-  const statusCode = err.statusCode || 500;
+  if (err.name === 'SequelizeForeignKeyConstraintError') {
+    return res.status(409).json({ success: false, message: 'Data terkait tidak valid atau masih digunakan.' });
+  }
+  const statusCode = err.statusCode || err.status || 500;
   res.status(statusCode).json({
     success: false,
     message: err.message || 'Terjadi kesalahan internal pada server.',

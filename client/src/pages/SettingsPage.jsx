@@ -28,12 +28,6 @@ import {
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
-const DEFAULT_USERS = [
-  { id: 1, name: 'Vincent (Owner)', username: 'admin', role: 'Admin (Bos)', status: 'Aktif', badge: '👑' },
-  { id: 2, name: 'Siti Rahmawati', username: 'kasir', role: 'Kasir Toko', status: 'Aktif', badge: '🛒' },
-  { id: 3, name: 'Agus Santoso', username: 'gudang', role: 'Staf Gudang', status: 'Aktif', badge: '📦' },
-];
-
 const DEFAULT_BRANCHES = [
   { id: 1, name: 'Depo Pusat Sentosa', address: 'Jl. Raya Gresik No. 123', type: 'Toko Utama & Gudang Pusat', status: 'Aktif' },
   { id: 2, name: 'Cabang Sentosa Surabaya', address: 'Jl. Raya Darmo Indah No. 8', type: 'Depo Material Barat', status: 'Aktif' },
@@ -67,7 +61,7 @@ export default function SettingsPage({ subTab, setSubTab }) {
 
   return (
     <SettingsFormContent
-      key={serverSettings ? 'loaded-settings' : 'initial-settings'}
+      key={serverSettings ? JSON.stringify(serverSettings) : 'initial-settings'}
       initialSettings={serverSettings}
       activeTabKey={activeTabKey}
       handleTabChange={handleTabChange}
@@ -131,10 +125,10 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
   const [showHppCashier, setShowHppCashier] = useState(initialSettings?.showHppCashier || 'no');
 
   // User Accounts State & Modal
-  const [users, setUsers] = useState(
+  const [users] = useState(
     Array.isArray(initialSettings?.usersList) && initialSettings.usersList.length > 0
-      ? initialSettings.usersList
-      : DEFAULT_USERS
+      ? initialSettings.usersList.map((u) => ({ ...u, role: { admin: 'Admin (Bos)', cashier: 'Kasir Toko', warehouse: 'Staf Gudang' }[u.role] || u.role, status: 'Aktif' }))
+      : []
   );
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
@@ -233,7 +227,6 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
       allowMinusStock,
       showHppCashier,
       branches,
-      usersList: users,
     });
   };
 
@@ -262,66 +255,27 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
     setIsUserModalOpen(true);
   };
 
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault();
-    if (!userForm.name.trim() || !userForm.username.trim()) {
-      showToast('error', 'Nama dan username wajib diisi!');
-      return;
-    }
-
-    const badgeMap = {
-      'Admin (Bos)': '👑',
-      'Kasir Toko': '🛒',
-      'Staf Gudang': '📦',
-      'Mandor Lapangan': '👷',
-    };
-
-    if (editingUserId) {
-      setUsers((prev) => {
-        const next = prev.map((u) =>
-          u.id === editingUserId
-            ? {
-                ...u,
-                name: userForm.name,
-                username: userForm.username.toLowerCase().replace(/\s+/g, ''),
-                role: userForm.role,
-                status: userForm.status,
-                badge: badgeMap[userForm.role] || '👤',
-              }
-            : u
-        );
-        persistSettings({ usersList: next });
-        return next;
-      });
-      showToast('success', `Akun pengguna "${userForm.name}" berhasil diperbarui.`);
-    } else {
-      const newUser = {
-        id: Date.now(),
-        name: userForm.name,
-        username: userForm.username.toLowerCase().replace(/\s+/g, ''),
-        role: userForm.role,
-        status: userForm.status,
-        badge: badgeMap[userForm.role] || '👤',
-      };
-      setUsers((prev) => {
-        const next = [...prev, newUser];
-        persistSettings({ usersList: next });
-        return next;
-      });
-      showToast('success', `Akun pengguna baru "${newUser.name}" berhasil ditambahkan.`);
-    }
-    setIsUserModalOpen(false);
+    const roleMap = { 'Admin (Bos)': 'admin', 'Kasir Toko': 'cashier', 'Staf Gudang': 'warehouse' };
+    const payload = { name: userForm.name, username: userForm.username, role: roleMap[userForm.role] || userForm.role };
+    if (userForm.password) payload.password = userForm.password;
+    try {
+      if (editingUserId) await api.put(`/auth/users/${editingUserId}`, payload);
+      else await api.post('/auth/register', payload);
+      await queryClient.invalidateQueries({ queryKey: ['system_settings'] });
+      setIsUserModalOpen(false);
+      showToast('success', 'Akun login berhasil disimpan.');
+    } catch (err) { showToast('error', err.response?.data?.message || 'Gagal menyimpan akun.'); }
   };
-
-  const handleDeleteUser = () => {
+  const handleDeleteUser = async () => {
     if (!userToDelete) return;
-    setUsers((prev) => {
-      const next = prev.filter((u) => u.id !== userToDelete.id);
-      persistSettings({ usersList: next });
-      return next;
-    });
-    showToast('success', `Akun "${userToDelete.name}" telah dihapus.`);
-    setUserToDelete(null);
+    try {
+      await api.delete(`/auth/users/${userToDelete.id}`);
+      await queryClient.invalidateQueries({ queryKey: ['system_settings'] });
+      setUserToDelete(null);
+      showToast('success', 'Akun login dihapus.');
+    } catch (err) { showToast('error', err.response?.data?.message || 'Gagal menghapus akun.'); }
   };
 
   // Branch handlers
@@ -360,7 +314,7 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
   };
 
   // Password update handler
-  const handleUpdatePassword = (e) => {
+  const handleUpdatePassword = async (e) => {
     e.preventDefault();
     if (!passwordForm.current) {
       showToast('error', 'Harap masukkan kata sandi saat ini.');
@@ -375,8 +329,11 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
       return;
     }
 
-    setPasswordForm({ current: '', newPass: '', confirmPass: '' });
-    showToast('success', 'Kata sandi sistem Anda berhasil diperbarui dengan aman.');
+    try {
+      await api.put('/auth/password', { currentPassword: passwordForm.current, newPassword: passwordForm.newPass });
+      setPasswordForm({ current: '', newPass: '', confirmPass: '' });
+      showToast('success', 'Kata sandi berhasil diperbarui.');
+    } catch (err) { showToast('error', err.response?.data?.message || 'Gagal mengubah password.'); }
   };
 
   // Database Backup handler
@@ -410,10 +367,10 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
 
       setLastBackupInfo({
         date: nowFormatted,
-        size: '12.8 MB',
+        size: `${new Blob([JSON.stringify(backupData)]).size} bytes`,
       });
       setIsBackingUp(false);
-      showToast('success', 'Berkas backup database JSON berhasil dibuat dan diunduh!');
+      showToast('success', 'Ekspor konfigurasi JSON berhasil diunduh (bukan backup transaksi/database).');
     }, 700);
   };
 
@@ -422,7 +379,7 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
     setIsCheckingUpdate(true);
     setTimeout(() => {
       setIsCheckingUpdate(false);
-      showToast('info', 'Sistem StokMaterial.id sudah menggunakan versi teranyar (v1.0.0 Stable).');
+      showToast('info', 'Versi terpasang: 1.0.0. Pemeriksaan pembaruan online belum tersedia.');
     }, 900);
   };
 
@@ -871,7 +828,7 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
             <Database className="w-5 h-5 text-[#234536]" />
             <div>
               <h3 className="font-extrabold text-sm text-[#252922]">Pengaturan Backup & Restore Database</h3>
-              <p className="text-[11px] text-[#625D53]">Lakukan backup data JSON/SQL secara berkala untuk menjaga keamanan data toko.</p>
+              <p className="text-[11px] text-[#625D53]">Ekspor ini hanya memuat konfigurasi, bukan transaksi, stok, atau backup SQL.</p>
             </div>
           </div>
 
@@ -1090,7 +1047,7 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
                   <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
                 </button>
                 <div className="text-[10px] text-[#16845B] font-bold mt-1">
-                  ✓ Menggunakan versi terbaru
+                  Versi terpasang: 1.0.0
                 </div>
               </div>
             </div>
@@ -1162,14 +1119,13 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
                     <option value="Kasir Toko">Kasir Toko</option>
                     <option value="Staf Gudang">Staf Gudang</option>
                     <option value="Admin (Bos)">Admin (Bos)</option>
-                    <option value="Mandor Lapangan">Mandor Lapangan</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="font-bold text-[#252922] block mb-1">Status</label>
                   <select
-                    value={userForm.status}
+                    disabled value="Aktif"
                     onChange={(e) => setUserForm((f) => ({ ...f, status: e.target.value }))}
                     className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
                   >
