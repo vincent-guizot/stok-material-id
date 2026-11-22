@@ -1,10 +1,9 @@
-import { motion, useReducedMotion } from 'framer-motion';
-import { motionTransition } from '../components/motion/presets.js';
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import api from "../services/api.js";
 import { useCartStore } from "../store/useCartStore.js";
+import { useSettings } from "../hooks/useSettings.js";
 import { formatRupiah } from "../utils/formatters.js";
 import MaterialImage from "../components/MaterialImage.jsx";
 import CreditHealthBar from "../components/CreditHealthBar.jsx";
@@ -22,8 +21,13 @@ import {
   X,
 } from "lucide-react";
 
+const CAT_ORDER = ['semen', 'bata', 'besi', 'cat', 'pipa', 'paku', 'keramik', 'kayu', 'atap', 'listrik'];
+const catRank = (name = '') => {
+  const i = CAT_ORDER.findIndex((k) => name.toLowerCase().includes(k));
+  return i === -1 ? 99 : i;
+};
+
 export default function POSPage({ onProceedToPayment, globalSearch }) {
-  const reduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const outlet = useOutletContext() || {};
   const effectiveGlobalSearch =
@@ -53,9 +57,10 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
     setCustomer,
     setDiscount,
     clearCart,
-    getSubtotal,
+    getTotals,
     getItemCount,
   } = useCartStore();
+  const { taxRate, allowMinusStock } = useSettings();
 
   const searchQuery = effectiveGlobalSearch || localSearch;
 
@@ -101,51 +106,23 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [items.length, handleProceed]);
 
-  const subtotal = getSubtotal();
-  const discountAmount = Math.min(subtotal, discount);
-  const taxAmount = 0;
-  const total = subtotal - discountAmount + taxAmount;
+  const {
+    subtotal,
+    discount: discountAmount,
+    taxAmount,
+    total,
+  } = getTotals(taxRate);
+
+  const { data: brandList = [] } = useQuery({
+    queryKey: ["brands"],
+    queryFn: async () => (await api.get("/brands")).data.data,
+  });
 
   // Filtered & sorted products
   const displayProducts = [...products]
     .filter((prod) => {
       if (selectedBrand === "all") return true;
-      const name = (prod.name || "").toLowerCase();
-      const sku = (prod.sku || "").toLowerCase();
-      if (selectedBrand === "indocement") {
-        return (
-          name.includes("tiga roda") ||
-          name.includes("indocement") ||
-          sku.includes("tgr")
-        );
-      }
-      if (selectedBrand === "semen-gresik") {
-        return name.includes("gresik") || sku.includes("grs");
-      }
-      if (selectedBrand === "rucika") {
-        return (
-          name.includes("rucika") ||
-          name.includes("wavin") ||
-          sku.includes("wvn")
-        );
-      }
-      if (selectedBrand === "dulux") {
-        return (
-          name.includes("dulux") ||
-          name.includes("catylac") ||
-          sku.includes("dlx")
-        );
-      }
-      if (selectedBrand === "hebel") {
-        return name.includes("hebel") || sku.includes("hbl");
-      }
-      if (selectedBrand === "sni") {
-        return name.includes("sni") || sku.includes("bsi");
-      }
-      return (
-        name.includes(selectedBrand.toLowerCase()) ||
-        sku.includes(selectedBrand.toLowerCase())
-      );
+      return prod.brandId === selectedBrand;
     })
     .sort((a, b) => {
       if (sortBy === "price-low") {
@@ -242,6 +219,11 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                     <span className="text-xs font-bold text-[#252922]">
                       {formatRupiah(item.unitPrice)}
                     </span>
+                    {item.tierLabel && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-[10px] font-bold text-[#16845B]" title="Harga grosir otomatis">
+                        {item.tierLabel}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -298,7 +280,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
             value={selectedCustomer?.id || ""}
             onChange={(e) => {
               const c = customers.find(
-                (cust) => cust.id === parseInt(e.target.value, 10),
+                (cust) => String(cust.id) === e.target.value,
               );
               setCustomer(c || null);
             }}
@@ -339,24 +321,26 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
               <input
                 type="number"
                 min="0"
-                max={subtotal}
+                max="100"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
                 className="w-12 text-center py-0.5 px-1 bg-[#F7F4ED] border border-[#DEDCCF] rounded text-xs font-bold text-[#252922]"
               />
-              <span className="font-bold text-xs">Rp</span>
+              <span className="font-bold text-xs">%</span>
               <span className="font-bold text-[#C62828] ml-2">
                 - {formatRupiah(discountAmount)}
               </span>
             </div>
           </div>
 
-          <div className="flex justify-between text-[#625D53]">
-            <span>Pajak</span>
-            <span className="font-bold text-[#252922]">
-              {formatRupiah(taxAmount)}
-            </span>
-          </div>
+          {taxRate > 0 && (
+            <div className="flex justify-between text-[#625D53]">
+              <span>Pajak (PPN {taxRate}%)</span>
+              <span className="font-bold text-[#252922]">
+                {formatRupiah(taxAmount)}
+              </span>
+            </div>
+          )}
 
           <div className="pt-2 border-t border-[#DEDCCF] flex items-baseline justify-between">
             <span className="text-xs font-black uppercase tracking-wider text-[#252922]">
@@ -386,13 +370,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
   );
 
   return (
-    <div className="relative flex flex-col lg:flex-row h-full w-full overflow-hidden bg-[#F7F4ED]">
-      {/* ============================================================ */}
-      {/* MAIN COLUMN: KATALOG & GRID PRODUK (Full width on mobile/tab) */}
-      {/* ============================================================ */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        {/* Header Title & Category Filter */}
-        <div className="p-4 sm:p-5 bg-white border-b border-[#DEDCCF] space-y-3 sm:space-y-4 shrink-0">
+    <div className="relative flex flex-col h-full w-full overflow-hidden bg-[#F7F4ED]">
+      {/* Judul + kategori selebar layar (seperti mockup) */}
+      <div className="p-4 sm:p-5 pb-3 bg-white border-b border-[#DEDCCF] space-y-3 sm:space-y-4 shrink-0">
           {/* Header Title */}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#234536] text-white flex items-center justify-center shrink-0 shadow-sm">
@@ -413,7 +393,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             <button
               onClick={() => setSelectedCategory(null)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-control text-xs font-bold whitespace-nowrap transition ${
+              className={`flex flex-col items-center gap-1 min-w-[84px] px-3 py-2 rounded-control text-[11px] font-bold whitespace-nowrap transition ${
                 selectedCategory === null
                   ? "bg-[#234536] text-white shadow-xs"
                   : "bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] border border-[#DEDCCF]"
@@ -423,7 +403,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
               <span>Semua</span>
             </button>
 
-            {categories.map((cat) => {
+            {[...categories].sort((a, b) => catRank(a.name) - catRank(b.name)).map((cat) => {
               const isSelected = selectedCategory === cat.id;
               return (
                 <button
@@ -431,7 +411,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                   onClick={() =>
                     setSelectedCategory(isSelected ? null : cat.id)
                   }
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-control text-xs font-bold whitespace-nowrap transition ${
+                  className={`flex flex-col items-center gap-1 min-w-[84px] px-3 py-2 rounded-control text-[11px] font-bold whitespace-nowrap transition ${
                     isSelected
                       ? "bg-[#234536] text-white shadow-xs"
                       : "bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] border border-[#DEDCCF]"
@@ -444,8 +424,13 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
             })}
           </div>
 
+      </div>
+
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
+        <div className="px-4 sm:px-5 py-3 bg-white border-b border-[#DEDCCF] shrink-0">
           {/* Search, Brand, Sort, View Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="relative flex-1 min-w-[180px]">
               <Search className="w-3.5 h-3.5 text-[#8C877D] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -464,12 +449,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                 className="px-2.5 py-1.5 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]"
               >
                 <option value="all">Semua Merek</option>
-                <option value="indocement">Tiga Roda / Indocement</option>
-                <option value="semen-gresik">Semen Gresik</option>
-                <option value="rucika">Rucika / Wavin</option>
-                <option value="dulux">Dulux / Catylac</option>
-                <option value="hebel">Bata Hebel</option>
-                <option value="sni">Besi SNI</option>
+                {brandList.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
               </select>
 
               <select
@@ -554,7 +536,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                           key={prod.id}
                           className="hover:bg-[#F7F4ED]/50 transition group cursor-pointer"
                           onClick={() => {
-                            if (!isOutOfStock) addItem(prod, selectedUnit);
+                            if (!isOutOfStock || allowMinusStock) addItem(prod, selectedUnit);
                           }}
                         >
                           <td className="py-2.5 px-3.5">
@@ -626,7 +608,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                           >
                             <button
                               onClick={() => addItem(prod, selectedUnit)}
-                              disabled={isOutOfStock}
+                              disabled={isOutOfStock && !allowMinusStock}
                               className="w-full py-1.5 px-2.5 rounded-control bg-[#234536] hover:bg-[#1c372b] active:scale-[0.98] text-white text-xs font-extrabold flex items-center justify-center gap-1 transition disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
                             >
                               <Plus className="w-3.5 h-3.5" />
@@ -662,11 +644,9 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                 const isOutOfStock = prod.currentStockBase <= 0;
 
                 return (
-                  <motion.div
-                    whileHover={reduceMotion ? undefined : { y: -2 }}
-                    transition={motionTransition}
+                  <div
                     key={prod.id}
-                    className="bg-white rounded-card border border-[#DEDCCF] p-3.5 flex flex-col justify-between shadow-card hover:border-[#234536] hover:shadow-card-hover transition-shadow relative group"
+                    className="bg-white rounded-card border border-[#DEDCCF] p-3.5 flex flex-col justify-between shadow-card hover:border-[#234536] hover:shadow-card-hover transition relative group"
                   >
                     {/* Top Terlaris Pill */}
                     {isPopular && (
@@ -741,13 +721,13 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
                     {/* Add to Cart Button */}
                     <button
                       onClick={() => addItem(prod, selectedUnit)}
-                      disabled={isOutOfStock}
+                      disabled={isOutOfStock && !allowMinusStock}
                       className="mt-3 w-full py-2 px-3 rounded-control bg-[#234536] hover:bg-[#1c372b] active:scale-[0.98] text-white text-xs font-extrabold flex items-center justify-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Tambah</span>
                     </button>
-                  </motion.div>
+                  </div>
                 );
               })}
             </div>
@@ -760,6 +740,7 @@ export default function POSPage({ onProceedToPayment, globalSearch }) {
       {/* ============================================================ */}
       <div className="hidden lg:flex flex-col w-[380px] xl:w-[420px] 2xl:w-[440px] border-l border-[#DEDCCF] h-full shrink-0 bg-white">
         {renderCartContent(false)}
+      </div>
       </div>
 
       {/* ============================================================ */}

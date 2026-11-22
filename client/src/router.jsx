@@ -9,6 +9,7 @@ import MasterDataPage from './pages/MasterDataPage.jsx';
 import SupplierPage from './pages/SupplierPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import HelpCenterPage from './pages/HelpCenterPage.jsx';
+import AdminOnly from './components/AdminOnly.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 
 export const router = createBrowserRouter([
@@ -46,7 +47,11 @@ export const router = createBrowserRouter([
       },
       {
         path: 'reports',
-        element: <ReportsPage />,
+        element: (
+          <AdminOnly>
+            <ReportsPage />
+          </AdminOnly>
+        ),
       },
       {
         path: 'master',

@@ -2,37 +2,28 @@ import React, { useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api.js';
+import { formatRupiah, formatDateIndo } from '../utils/formatters.js';
+import { useAuthStore } from '../store/useAuthStore.js';
 import {
   Settings,
   Store,
   Sliders,
   Receipt,
   Boxes,
-  Database,
   Info,
   CheckCircle2,
-  RefreshCw,
   Eye,
   Save,
-  MapPin,
-  ShieldCheck,
-  Plus,
   Upload,
   Printer,
-  Download,
   AlertCircle,
   X,
-  Trash2,
-  Lock,
-  UserCheck,
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
-
-const DEFAULT_BRANCHES = [
-  { id: 1, name: 'Depo Pusat Sentosa', address: 'Jl. Raya Gresik No. 123', type: 'Toko Utama & Gudang Pusat', status: 'Aktif' },
-  { id: 2, name: 'Cabang Sentosa Surabaya', address: 'Jl. Raya Darmo Indah No. 8', type: 'Depo Material Barat', status: 'Aktif' },
-  { id: 3, name: 'Cabang Sentosa Sidoarjo', address: 'Jl. Pahlawan No. 56', type: 'Depo Material Selatan', status: 'Dalam Persiapan' },
-];
+import UsersTab from './settings/UsersTab.jsx';
+import BranchesTab from './settings/BranchesTab.jsx';
+import BackupTab from './settings/BackupTab.jsx';
+import SecurityTab from './settings/SecurityTab.jsx';
 
 export default function SettingsPage({ subTab, setSubTab }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,7 +52,7 @@ export default function SettingsPage({ subTab, setSubTab }) {
 
   return (
     <SettingsFormContent
-      key={serverSettings ? JSON.stringify(serverSettings) : 'initial-settings'}
+      key={serverSettings ? 'loaded-settings' : 'initial-settings'}
       initialSettings={serverSettings}
       activeTabKey={activeTabKey}
       handleTabChange={handleTabChange}
@@ -71,6 +62,10 @@ export default function SettingsPage({ subTab, setSubTab }) {
 
 function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange }) {
   const queryClient = useQueryClient();
+  const isAdmin = useAuthStore((st) => st.user?.role) === 'admin';
+
+  // Tarif PPN (0 = tanpa PPN). Hanya admin yang boleh mengubah; server juga menolak selain admin.
+  const [taxRate, setTaxRate] = useState(parseFloat(initialSettings?.taxRate) || 0);
 
   // Feedback Toast state
   const [toast, setToast] = useState({ show: false, type: 'success', message: '' });
@@ -82,12 +77,12 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
   };
 
   // Store info
-  const [storeName, setStoreName] = useState(initialSettings?.storeName || 'Toko Sentosa');
+  const [storeName, setStoreName] = useState(initialSettings?.storeName || '');
   const [storeAddress, setStoreAddress] = useState(
-    initialSettings?.storeAddress || 'Jl. Raya Gresik No. 123, Gresik, Jawa Timur 61111'
+    initialSettings?.storeAddress || ''
   );
-  const [storePhone, setStorePhone] = useState(initialSettings?.storePhone || '031-1234567');
-  const [storeEmail, setStoreEmail] = useState(initialSettings?.storeEmail || 'tokosentosa@gmail.com');
+  const [storePhone, setStorePhone] = useState(initialSettings?.storePhone || '');
+  const [storeEmail, setStoreEmail] = useState(initialSettings?.storeEmail || '');
 
   // Logo file upload
   const logoInputRef = useRef(null);
@@ -95,21 +90,24 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
 
   const handleLogoUpload = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const previewUrl = URL.createObjectURL(file);
-      setCurrentLogo(previewUrl);
-      showToast('success', `Logo toko "${file.name}" berhasil dipilih.`);
-    }
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return showToast('error', 'Berkas logo harus berupa gambar.');
+    if (file.size > 300 * 1024) return showToast('error', 'Ukuran logo maksimal 300 KB.');
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCurrentLogo(reader.result);
+      showToast('info', `Logo "${file.name}" dipilih. Klik Simpan Perubahan untuk menyimpannya.`);
+    };
+    reader.readAsDataURL(file);
   };
 
   // Receipt settings
   const [headerReceipt, setHeaderReceipt] = useState(
-    initialSettings?.headerReceipt ||
-      'TOKO SENTOSA\nToko Bangunan & Material Konstruksi\nJl. Raya Gresik No. 123\nTelp. 031-1234567'
+    initialSettings?.headerReceipt || ''
   );
   const [footerReceipt, setFooterReceipt] = useState(
-    initialSettings?.footerReceipt ||
-      'Terima kasih telah berbelanja\nBarang yang sudah dibeli tidak dapat ditukar/dikembalikan.'
+    initialSettings?.footerReceipt || ''
   );
   const [showLogo, setShowLogo] = useState(initialSettings?.showLogo ?? true);
   const [showAddress, setShowAddress] = useState(initialSettings?.showAddress ?? true);
@@ -124,56 +122,16 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
   const [allowMinusStock, setAllowMinusStock] = useState(initialSettings?.allowMinusStock || 'no');
   const [showHppCashier, setShowHppCashier] = useState(initialSettings?.showHppCashier || 'no');
 
-  // User Accounts State & Modal
-  const [users] = useState(
-    Array.isArray(initialSettings?.usersList) && initialSettings.usersList.length > 0
-      ? initialSettings.usersList.map((u) => ({ ...u, role: { admin: 'Admin (Bos)', cashier: 'Kasir Toko', warehouse: 'Staf Gudang' }[u.role] || u.role, status: 'Aktif' }))
-      : []
-  );
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [editingUserId, setEditingUserId] = useState(null);
-  const [userForm, setUserForm] = useState({
-    name: '',
-    username: '',
-    role: 'Kasir Toko',
-    status: 'Aktif',
-    password: '',
+  const { data: lastTx } = useQuery({
+    queryKey: ['transactions', 'latest'],
+    queryFn: async () => (await api.get('/transactions?limit=1')).data.data?.[0] || null,
   });
-  const [userToDelete, setUserToDelete] = useState(null);
-
-  // Branches State & Modal
-  const [branches, setBranches] = useState(
-    Array.isArray(initialSettings?.branches) && initialSettings.branches.length > 0
-      ? initialSettings.branches
-      : DEFAULT_BRANCHES
-  );
-  const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
-  const [branchForm, setBranchForm] = useState({
-    name: '',
-    address: '',
-    type: 'Depo Material',
-    status: 'Aktif',
-  });
+  const { data: helpData } = useQuery({ queryKey: ['help'], queryFn: async () => (await api.get('/help')).data.data });
+  const [copyrightYear] = useState(() => new Date().getFullYear());
+  const aboutVersion = (helpData?.about || []).find((a) => a.title === 'Versi Aplikasi')?.body || '-';
 
   // Receipt Preview Modal
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
-
-  // Password Security Form
-  const [passwordForm, setPasswordForm] = useState({
-    current: '',
-    newPass: '',
-    confirmPass: '',
-  });
-
-  // Database Backup State
-  const [lastBackupInfo, setLastBackupInfo] = useState({
-    date: '20 Okt 2026, 21:15',
-    size: '12.4 MB',
-  });
-  const [isBackingUp, setIsBackingUp] = useState(false);
-
-  // Check Updates State
-  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
   const subTabs = [
     { id: 'general', label: 'Umum' },
@@ -184,15 +142,6 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
     { id: 'security', label: 'Keamanan' },
     { id: 'other', label: 'Lainnya' },
   ];
-
-  const persistSettings = async (payload) => {
-    try {
-      await api.put('/settings', payload);
-      queryClient.invalidateQueries({ queryKey: ['system_settings'] });
-    } catch {
-      // silent fallback
-    }
-  };
 
   const saveSettingsMutation = useMutation({
     mutationFn: async (payload) => {
@@ -226,161 +175,9 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
       emptyStockAlert,
       allowMinusStock,
       showHppCashier,
-      branches,
+      logoUrl: currentLogo !== logoImg ? currentLogo : null,
+      ...(isAdmin ? { taxRate } : {}),
     });
-  };
-
-  // User handlers
-  const handleOpenAddUser = () => {
-    setEditingUserId(null);
-    setUserForm({
-      name: '',
-      username: '',
-      role: 'Kasir Toko',
-      status: 'Aktif',
-      password: '',
-    });
-    setIsUserModalOpen(true);
-  };
-
-  const handleOpenEditUser = (user) => {
-    setEditingUserId(user.id);
-    setUserForm({
-      name: user.name,
-      username: user.username,
-      role: user.role,
-      status: user.status,
-      password: '',
-    });
-    setIsUserModalOpen(true);
-  };
-
-  const handleSaveUser = async (e) => {
-    e.preventDefault();
-    const roleMap = { 'Admin (Bos)': 'admin', 'Kasir Toko': 'cashier', 'Staf Gudang': 'warehouse' };
-    const payload = { name: userForm.name, username: userForm.username, role: roleMap[userForm.role] || userForm.role };
-    if (userForm.password) payload.password = userForm.password;
-    try {
-      if (editingUserId) await api.put(`/auth/users/${editingUserId}`, payload);
-      else await api.post('/auth/register', payload);
-      await queryClient.invalidateQueries({ queryKey: ['system_settings'] });
-      setIsUserModalOpen(false);
-      showToast('success', 'Akun login berhasil disimpan.');
-    } catch (err) { showToast('error', err.response?.data?.message || 'Gagal menyimpan akun.'); }
-  };
-  const handleDeleteUser = async () => {
-    if (!userToDelete) return;
-    try {
-      await api.delete(`/auth/users/${userToDelete.id}`);
-      await queryClient.invalidateQueries({ queryKey: ['system_settings'] });
-      setUserToDelete(null);
-      showToast('success', 'Akun login dihapus.');
-    } catch (err) { showToast('error', err.response?.data?.message || 'Gagal menghapus akun.'); }
-  };
-
-  // Branch handlers
-  const handleOpenAddBranch = () => {
-    setBranchForm({
-      name: '',
-      address: '',
-      type: 'Depo Material Tambahan',
-      status: 'Aktif',
-    });
-    setIsBranchModalOpen(true);
-  };
-
-  const handleSaveBranch = (e) => {
-    e.preventDefault();
-    if (!branchForm.name.trim() || !branchForm.address.trim()) {
-      showToast('error', 'Nama cabang dan alamat wajib diisi!');
-      return;
-    }
-
-    const newBranch = {
-      id: Date.now(),
-      name: branchForm.name,
-      address: branchForm.address,
-      type: branchForm.type,
-      status: branchForm.status,
-    };
-
-    setBranches((prev) => {
-      const next = [...prev, newBranch];
-      persistSettings({ branches: next });
-      return next;
-    });
-    showToast('success', `Cabang/Depo "${newBranch.name}" berhasil didaftarkan.`);
-    setIsBranchModalOpen(false);
-  };
-
-  // Password update handler
-  const handleUpdatePassword = async (e) => {
-    e.preventDefault();
-    if (!passwordForm.current) {
-      showToast('error', 'Harap masukkan kata sandi saat ini.');
-      return;
-    }
-    if (passwordForm.newPass.length < 6) {
-      showToast('error', 'Kata sandi baru minimal harus 6 karakter.');
-      return;
-    }
-    if (passwordForm.newPass !== passwordForm.confirmPass) {
-      showToast('error', 'Konfirmasi kata sandi baru tidak cocok!');
-      return;
-    }
-
-    try {
-      await api.put('/auth/password', { currentPassword: passwordForm.current, newPassword: passwordForm.newPass });
-      setPasswordForm({ current: '', newPass: '', confirmPass: '' });
-      showToast('success', 'Kata sandi berhasil diperbarui.');
-    } catch (err) { showToast('error', err.response?.data?.message || 'Gagal mengubah password.'); }
-  };
-
-  // Database Backup handler
-  const handleBackupDownload = () => {
-    setIsBackingUp(true);
-    setTimeout(() => {
-      const backupData = {
-        app: 'StokMaterial.id',
-        version: '1.0.0',
-        timestamp: new Date().toISOString(),
-        store: { storeName, storeAddress, storePhone, storeEmail },
-        rules: { lowStockAlert, emptyStockAlert, allowMinusStock, showHppCashier },
-        users,
-        branches,
-        receipt: { headerReceipt, footerReceipt, showLogo, showAddress, showPhone, showCashier, showThanks, autoPrint },
-      };
-
-      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(backupData, null, 2));
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute('href', dataStr);
-      downloadAnchor.setAttribute('download', `stokmaterial-backup-${Date.now()}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-
-      const nowFormatted = new Date().toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }) + `, ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
-
-      setLastBackupInfo({
-        date: nowFormatted,
-        size: `${new Blob([JSON.stringify(backupData)]).size} bytes`,
-      });
-      setIsBackingUp(false);
-      showToast('success', 'Ekspor konfigurasi JSON berhasil diunduh (bukan backup transaksi/database).');
-    }, 700);
-  };
-
-  // Check update handler
-  const handleCheckUpdate = () => {
-    setIsCheckingUpdate(true);
-    setTimeout(() => {
-      setIsCheckingUpdate(false);
-      showToast('info', 'Versi terpasang: 1.0.0. Pemeriksaan pembaruan online belum tersedia.');
-    }, 900);
   };
 
   return (
@@ -422,7 +219,7 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
       />
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 !mt-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-[#234536] text-white flex items-center justify-center shrink-0 shadow-sm">
             <Settings className="w-5 h-5" />
@@ -508,7 +305,7 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
                 <div className="p-3 rounded-control border border-[#DEDCCF] bg-[#F7F4ED] text-center space-y-2">
                   <div className="text-[11px] font-bold text-[#625D53]">Logo Toko</div>
                   <div className="w-14 h-14 mx-auto rounded-xl overflow-hidden border border-[#DEDCCF] bg-white flex items-center justify-center shadow-xs">
-                    <img src={currentLogo} alt="Logo" className="w-full h-full object-cover" />
+                    <img src={currentLogo} alt="Logo" className="w-full h-full object-contain p-1" />
                   </div>
                   <button
                     type="button"
@@ -580,9 +377,15 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
 
               <div>
                 <label className="font-bold text-[#252922] block mb-1">Pajak (PPN)</label>
-                <select className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold">
-                  <option>Menggunakan PPN 11%</option>
-                  <option>Tidak menggunakan PPN</option>
+                <select
+                  value={taxRate > 0 ? 'ppn11' : 'none'}
+                  onChange={(e) => setTaxRate(e.target.value === 'ppn11' ? 11 : 0)}
+                  disabled={!isAdmin}
+                  title={isAdmin ? '' : 'Hanya Bos / Admin yang dapat mengubah tarif PPN'}
+                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold disabled:opacity-60"
+                >
+                  <option value="ppn11">Menggunakan PPN 11%</option>
+                  <option value="none">Tidak menggunakan PPN</option>
                 </select>
               </div>
 
@@ -605,140 +408,9 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* TAB 2: PENGGUNA (User Management)                        */}
-      {/* ======================================================== */}
-      {activeTabKey === 'users' && (
-        <div className="bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#DEDCCF]">
-            <div>
-              <h3 className="font-extrabold text-sm text-[#252922]">
-                Manajemen Pengguna & Hak Akses
-              </h3>
-              <p className="text-xs text-[#625D53]">
-                Kelola akun kasir, staf gudang, dan administrator sistem POS toko.
-              </p>
-            </div>
-            <button
-              onClick={handleOpenAddUser}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs active:scale-95"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Akun Baru</span>
-            </button>
-          </div>
+      {activeTabKey === 'users' && <UsersTab onToast={showToast} />}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#F7F4ED] border-b border-[#DEDCCF] text-[#8C877D] font-bold">
-                <tr>
-                  <th className="py-2.5 px-3">NAMA PENGGUNA</th>
-                  <th className="py-2.5 px-3">USERNAME</th>
-                  <th className="py-2.5 px-3">ROLE / PERAN</th>
-                  <th className="py-2.5 px-3 text-center">STATUS</th>
-                  <th className="py-2.5 px-3 text-center">AKSI</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#DEDCCF]/70">
-                {users.map((u) => (
-                  <tr key={u.id} className="hover:bg-[#F7F4ED]/50 transition">
-                    <td className="py-3 px-3 font-bold text-[#252922] flex items-center gap-2">
-                      <span className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-xs">
-                        {u.badge}
-                      </span>
-                      <span>{u.name}</span>
-                    </td>
-                    <td className="py-3 px-3 font-mono text-[#625D53]">@{u.username}</td>
-                    <td className="py-3 px-3 font-bold text-[#234536]">{u.role}</td>
-                    <td className="py-3 px-3 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          u.status === 'Aktif'
-                            ? 'bg-emerald-100 text-[#16845B]'
-                            : 'bg-stone-200 text-[#625D53]'
-                        }`}
-                      >
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => handleOpenEditUser(u)}
-                          className="px-2.5 py-1 rounded bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] font-bold text-[#252922] text-[11px] transition"
-                        >
-                          Ubah Hak Akses
-                        </button>
-                        {u.username !== 'admin' && (
-                          <button
-                            onClick={() => setUserToDelete(u)}
-                            className="p-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition"
-                            title="Hapus Akun Pengguna"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* TAB 3: CABANG TOKO                                       */}
-      {/* ======================================================== */}
-      {activeTabKey === 'branches' && (
-        <div className="bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#DEDCCF]">
-            <div>
-              <h3 className="font-extrabold text-sm text-[#252922]">
-                Daftar Cabang Toko & Depo Material
-              </h3>
-              <p className="text-xs text-[#625D53]">
-                Konfigurasi lokasi depo untuk sinkronisasi stok dan transaksi antar cabang.
-              </p>
-            </div>
-            <button
-              onClick={handleOpenAddBranch}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs active:scale-95"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Cabang Baru</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {branches.map((b) => (
-              <div
-                key={b.id}
-                className="p-4 rounded-card bg-[#F7F4ED]/60 border border-[#DEDCCF] space-y-2 hover:bg-[#F7F4ED] transition relative group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-extrabold text-xs text-[#252922]">{b.name}</div>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      b.status === 'Aktif' ? 'bg-emerald-100 text-[#16845B]' : 'bg-amber-100 text-[#D97706]'
-                    }`}
-                  >
-                    {b.status}
-                  </span>
-                </div>
-                <div className="text-xs text-[#625D53] flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-[#234536] shrink-0" />
-                  <span>{b.address}</span>
-                </div>
-                <div className="text-[11px] text-[#8C877D] font-medium pt-1">
-                  {b.type}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {activeTabKey === 'branches' && <BranchesTab onToast={showToast} />}
 
       {/* ======================================================== */}
       {/* TAB 4: PRINTER & NOTA                                    */}
@@ -819,118 +491,9 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* TAB 5: BACKUP DATA                                       */}
-      {/* ======================================================== */}
-      {activeTabKey === 'backup' && (
-        <div className="bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4 max-w-2xl">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-[#DEDCCF]">
-            <Database className="w-5 h-5 text-[#234536]" />
-            <div>
-              <h3 className="font-extrabold text-sm text-[#252922]">Pengaturan Backup & Restore Database</h3>
-              <p className="text-[11px] text-[#625D53]">Ekspor ini hanya memuat konfigurasi, bukan transaksi, stok, atau backup SQL.</p>
-            </div>
-          </div>
+      {activeTabKey === 'backup' && <BackupTab onToast={showToast} />}
 
-          <div className="p-4 bg-emerald-50 rounded-control border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="w-8 h-8 text-[#16845B] shrink-0" />
-              <div>
-                <div className="text-xs font-bold text-[#16845B]">Status Backup Database</div>
-                <div className="text-sm font-black text-[#252922]">{lastBackupInfo.date}</div>
-                <div className="text-[11px] text-[#625D53]">Ukuran File Dump: {lastBackupInfo.size} (Tersimpan & Siap Diunduh)</div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              disabled={isBackingUp}
-              onClick={handleBackupDownload}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-control bg-[#234536] text-white text-xs font-bold hover:bg-[#1c372b] transition shadow-xs active:scale-95 disabled:opacity-50"
-            >
-              {isBackingUp ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Download className="w-3.5 h-3.5" />
-              )}
-              <span>{isBackingUp ? 'Memproses...' : 'Backup Sekarang'}</span>
-            </button>
-          </div>
-
-          <div className="text-xs space-y-2 pt-2">
-            <div className="font-bold text-[#252922]">Jadwal Auto-Backup:</div>
-            <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] flex items-center justify-between">
-              <span>Auto-Backup Harian (Setiap pukul 23:00 WIB)</span>
-              <span className="font-bold text-[#16845B]">Aktif</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* TAB 6: KEAMANAN                                          */}
-      {/* ======================================================== */}
-      {activeTabKey === 'security' && (
-        <div className="bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4 max-w-2xl">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-[#DEDCCF]">
-            <ShieldCheck className="w-5 h-5 text-[#234536]" />
-            <div>
-              <h3 className="font-extrabold text-sm text-[#252922]">Keamanan Akun & Sandi</h3>
-              <p className="text-[11px] text-[#625D53]">Ubah kata sandi admin dan konfigurasi proteksi otorisasi kasir.</p>
-            </div>
-          </div>
-
-          <form onSubmit={handleUpdatePassword} className="space-y-3 text-xs">
-            <div>
-              <label className="font-bold text-[#252922] block mb-1">Kata Sandi Saat Ini *</label>
-              <input
-                type="password"
-                required
-                value={passwordForm.current}
-                onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
-                placeholder="Masukkan kata sandi saat ini"
-                className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536]"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Kata Sandi Baru *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.newPass}
-                  onChange={(e) => setPasswordForm((p) => ({ ...p, newPass: e.target.value }))}
-                  placeholder="Minimal 6 karakter"
-                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536]"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Konfirmasi Sandi Baru *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.confirmPass}
-                  onChange={(e) => setPasswordForm((p) => ({ ...p, confirmPass: e.target.value }))}
-                  placeholder="Ulangi kata sandi baru"
-                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536]"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-control bg-[#234536] text-white font-bold text-xs hover:bg-[#1c372b] transition shadow-xs active:scale-95"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Perbarui Kata Sandi</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      {activeTabKey === 'security' && <SecurityTab onToast={showToast} />}
 
       {/* ======================================================== */}
       {/* TAB 7: LAINNYA (Aturan Stok & Penjualan)                  */}
@@ -1024,279 +587,14 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-[#234536] flex items-center justify-center text-white text-xl shadow-xs shrink-0">
-                  🧱
-                </div>
-                <div>
-                  <div className="font-black text-sm text-[#252922]">StokMaterial.id</div>
-                  <div className="text-xs text-[#625D53]">Versi 1.0.0 (Production Build)</div>
-                  <div className="text-[10px] text-[#8C877D]">© 2026 Toko Sentosa. Hak Cipta Dilindungi.</div>
-                </div>
-              </div>
-
-              <div className="sm:text-right">
-                <button
-                  type="button"
-                  disabled={isCheckingUpdate}
-                  onClick={handleCheckUpdate}
-                  className="px-3 py-1.5 rounded-control bg-white border border-[#DEDCCF] text-xs font-bold text-[#252922] hover:bg-[#F7F4ED] flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-[#234536] ${isCheckingUpdate ? 'animate-spin' : ''}`} />
-                  <span>{isCheckingUpdate ? 'Memeriksa...' : 'Cek Pembaruan'}</span>
-                </button>
-                <div className="text-[10px] text-[#16845B] font-bold mt-1">
-                  Versi terpasang: 1.0.0
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-[#234536] flex items-center justify-center text-white text-xl shadow-xs shrink-0">🧱</div>
+              <div>
+                <div className="font-black text-sm text-[#252922]">StokMaterial.id</div>
+                <div className="text-xs text-[#625D53]">Versi {aboutVersion}</div>
+                <div className="text-[10px] text-[#8C877D]">© {copyrightYear} {storeName || 'Toko'}. Hak Cipta Dilindungi.</div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: Tambah / Ubah Akun Pengguna                       */}
-      {/* ======================================================== */}
-      {isUserModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-card max-w-md w-full p-5 border border-[#DEDCCF] shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#DEDCCF]">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-[#234536]">
-                  <UserCheck className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-[#252922]">
-                    {editingUserId ? 'Ubah Akun Pengguna' : 'Tambah Akun Baru'}
-                  </h3>
-                  <p className="text-[11px] text-[#625D53]">
-                    {editingUserId ? 'Perbarui wewenang atau hak akses user' : 'Daftarkan kasir atau staf gudang baru'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsUserModalOpen(false)}
-                className="p-1 rounded-control hover:bg-[#F7F4ED] text-[#8C877D] transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveUser} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Nama Lengkap *</label>
-                <input
-                  type="text"
-                  required
-                  value={userForm.name}
-                  onChange={(e) => setUserForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Contoh: Budi Santoso"
-                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536]"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Username Login *</label>
-                <input
-                  type="text"
-                  required
-                  value={userForm.username}
-                  onChange={(e) => setUserForm((f) => ({ ...f, username: e.target.value }))}
-                  placeholder="Contoh: budi_kasir"
-                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536] font-mono text-[11px]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Role / Peran</label>
-                  <select
-                    value={userForm.role}
-                    onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value }))}
-                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
-                  >
-                    <option value="Kasir Toko">Kasir Toko</option>
-                    <option value="Staf Gudang">Staf Gudang</option>
-                    <option value="Admin (Bos)">Admin (Bos)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Status</label>
-                  <select
-                    disabled value="Aktif"
-                    onChange={(e) => setUserForm((f) => ({ ...f, status: e.target.value }))}
-                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
-                  >
-                    <option value="Aktif">Aktif</option>
-                    <option value="Nonaktif">Nonaktif</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">
-                  {editingUserId ? 'Ganti Sandi (Opsional)' : 'Kata Sandi Awal *'}
-                </label>
-                <input
-                  type="password"
-                  required={!editingUserId}
-                  value={userForm.password}
-                  onChange={(e) => setUserForm((f) => ({ ...f, password: e.target.value }))}
-                  placeholder="Minimal 6 karakter"
-                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536]"
-                />
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#DEDCCF]">
-                <button
-                  type="button"
-                  onClick={() => setIsUserModalOpen(false)}
-                  className="px-3 py-1.5 rounded-control bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] font-bold text-xs"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-control bg-[#234536] text-white font-extrabold text-xs shadow-xs hover:bg-[#1c372b] transition"
-                >
-                  {editingUserId ? 'Simpan Perubahan' : 'Tambah Akun'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: Konfirmasi Hapus User                             */}
-      {/* ======================================================== */}
-      {userToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-card max-w-sm w-full p-5 border border-[#DEDCCF] shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="font-extrabold text-sm text-[#252922]">Hapus Akun Pengguna</h4>
-                <p className="text-[11px] text-[#625D53]">Tindakan ini tidak dapat dibatalkan.</p>
-              </div>
-            </div>
-            <p className="text-xs text-[#252922]">
-              Apakah Anda yakin ingin menghapus akun <strong>{userToDelete.name}</strong> (@{userToDelete.username})?
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#DEDCCF]">
-              <button
-                type="button"
-                onClick={() => setUserToDelete(null)}
-                className="px-3 py-1.5 rounded-control bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] font-bold text-xs"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteUser}
-                className="px-4 py-1.5 rounded-control bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 shadow-xs"
-              >
-                Hapus Akun
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: Tambah Cabang Toko                                */}
-      {/* ======================================================== */}
-      {isBranchModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-card max-w-md w-full p-5 border border-[#DEDCCF] shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#DEDCCF]">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-[#234536]">
-                  <MapPin className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-[#252922]">Tambah Cabang / Depo Baru</h3>
-                  <p className="text-[11px] text-[#625D53]">Tambahkan lokasi gudang atau toko satelit</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsBranchModalOpen(false)}
-                className="p-1 rounded-control hover:bg-[#F7F4ED] text-[#8C877D] transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveBranch} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Nama Cabang / Depo *</label>
-                <input
-                  type="text"
-                  required
-                  value={branchForm.name}
-                  onChange={(e) => setBranchForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Contoh: Depo Sentosa Menganti"
-                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536]"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Alamat Cabang *</label>
-                <textarea
-                  rows={2}
-                  required
-                  value={branchForm.address}
-                  onChange={(e) => setBranchForm((f) => ({ ...f, address: e.target.value }))}
-                  placeholder="Jl. Raya Menganti No. 88, Gresik"
-                  className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#234536]"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Tipe Lokasi</label>
-                  <input
-                    type="text"
-                    value={branchForm.type}
-                    onChange={(e) => setBranchForm((f) => ({ ...f, type: e.target.value }))}
-                    placeholder="Depo Material / Satelit"
-                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Status Operasional</label>
-                  <select
-                    value={branchForm.status}
-                    onChange={(e) => setBranchForm((f) => ({ ...f, status: e.target.value }))}
-                    className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
-                  >
-                    <option value="Aktif">Aktif</option>
-                    <option value="Dalam Persiapan">Dalam Persiapan</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#DEDCCF]">
-                <button
-                  type="button"
-                  onClick={() => setIsBranchModalOpen(false)}
-                  className="px-3 py-1.5 rounded-control bg-[#F7F4ED] hover:bg-[#ECEAE2] text-[#252922] font-bold text-xs"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-control bg-[#234536] text-white font-extrabold text-xs shadow-xs hover:bg-[#1c372b] transition"
-                >
-                  Daftarkan Cabang
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
@@ -1336,80 +634,90 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
 
               <div className="border-b border-dashed border-stone-400 my-1" />
 
-              {/* Meta */}
-              <div className="space-y-0.5 text-[10px]">
-                <div className="flex justify-between">
-                  <span>No. Nota:</span>
-                  <span className="font-bold">NOTA-20261020-001</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Waktu:</span>
-                  <span>20/10/2026 14:30</span>
-                </div>
-                {showCashier && (
-                  <div className="flex justify-between">
-                    <span>Kasir:</span>
-                    <span>Siti Rahmawati</span>
+              {/* Meta + isi nota dari transaksi terakhir di database */}
+              {lastTx ? (
+                <>
+                  <div className="space-y-0.5 text-[10px]">
+                    <div className="flex justify-between">
+                      <span>No. Nota:</span>
+                      <span className="font-bold">{lastTx.invoiceNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Waktu:</span>
+                      <span>{formatDateIndo(lastTx.transactionDate)}</span>
+                    </div>
+                    {showCashier && (
+                      <div className="flex justify-between">
+                        <span>Kasir:</span>
+                        <span>{lastTx.cashier?.name || '-'}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Pelanggan:</span>
+                      <span>{lastTx.customer?.name || 'Umum'}</span>
+                    </div>
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span>Pelanggan:</span>
-                  <span>Mandor Hendro (Cash)</span>
-                </div>
-              </div>
 
-              <div className="border-b border-dashed border-stone-400 my-1" />
+                  <div className="border-b border-dashed border-stone-400 my-1" />
 
-              {/* Items */}
-              <div className="space-y-1.5 text-[10px]">
-                <div>
-                  <div className="font-bold">Semen Portland Gresik 50kg</div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>10 Sak x 68.000</span>
-                    <span>680.000</span>
+                  <div className="space-y-1.5 text-[10px]">
+                    {(lastTx.items || []).map((it) => (
+                      <div key={it.id}>
+                        <div className="font-bold">{it.productName}</div>
+                        <div className="flex justify-between text-stone-600">
+                          <span>{Number(it.qty)} {it.unitName} x {Number(it.unitPrice).toLocaleString('id-ID')}</span>
+                          <span>{Number(it.subtotal).toLocaleString('id-ID')}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-                <div>
-                  <div className="font-bold">Besi Beton Ulir 10mm Sni</div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>5 Btg x 82.500</span>
-                    <span>412.500</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="font-bold">Kawat Bendrat Hitam (Roll)</div>
-                  <div className="flex justify-between text-stone-600">
-                    <span>1 Roll x 380.000</span>
-                    <span>380.000</span>
-                  </div>
-                </div>
-              </div>
 
-              <div className="border-b border-dashed border-stone-400 my-1" />
+                  <div className="border-b border-dashed border-stone-400 my-1" />
 
-              {/* Totals */}
-              <div className="space-y-0.5 text-[10px]">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>Rp 1.472.500</span>
+                  <div className="space-y-0.5 text-[10px]">
+                    <div className="flex justify-between">
+                      <span>Subtotal:</span>
+                      <span>{formatRupiah(lastTx.subtotal)}</span>
+                    </div>
+                    {Number(lastTx.discount) > 0 && (
+                      <div className="flex justify-between">
+                        <span>Diskon:</span>
+                        <span>-{formatRupiah(lastTx.discount)}</span>
+                      </div>
+                    )}
+                    {Number(lastTx.taxAmount) > 0 && (
+                      <div className="flex justify-between">
+                        <span>PPN ({Number(lastTx.taxRate)}%):</span>
+                        <span>{formatRupiah(lastTx.taxAmount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-black text-xs pt-1 border-t border-stone-300">
+                      <span>TOTAL:</span>
+                      <span>{formatRupiah(lastTx.totalAmount)}</span>
+                    </div>
+                    <div className="flex justify-between pt-0.5">
+                      <span>Dibayar:</span>
+                      <span>{formatRupiah(lastTx.paidAmount)}</span>
+                    </div>
+                    {Number(lastTx.debtAmount) > 0 && (
+                      <div className="flex justify-between">
+                        <span>Kasbon:</span>
+                        <span>{formatRupiah(lastTx.debtAmount)}</span>
+                      </div>
+                    )}
+                    {Number(lastTx.changeAmount) > 0 && (
+                      <div className="flex justify-between font-bold">
+                        <span>Kembali:</span>
+                        <span>{formatRupiah(lastTx.changeAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="py-6 text-center text-[10px] text-stone-500">
+                  Belum ada transaksi. Pratinjau akan menampilkan nota terakhir setelah ada penjualan.
                 </div>
-                <div className="flex justify-between">
-                  <span>PPN (11%):</span>
-                  <span>Rp 161.975</span>
-                </div>
-                <div className="flex justify-between font-black text-xs pt-1 border-t border-stone-300">
-                  <span>TOTAL:</span>
-                  <span>Rp 1.634.475</span>
-                </div>
-                <div className="flex justify-between pt-0.5">
-                  <span>Bayar Tunai:</span>
-                  <span>Rp 1.700.000</span>
-                </div>
-                <div className="flex justify-between font-bold">
-                  <span>Kembali:</span>
-                  <span>Rp 65.525</span>
-                </div>
-              </div>
+              )}
 
               <div className="border-b border-dashed border-stone-400 my-1" />
 
@@ -1436,7 +744,7 @@ function SettingsFormContent({ initialSettings, activeTabKey, handleTabChange })
                   <span className="w-1 h-full bg-black"></span>
                 </div>
                 <div className="text-[9px] text-stone-500 font-mono tracking-widest">
-                  *20261020001*
+                  *{(lastTx?.invoiceNumber || '').replace(/\D/g, '')}*
                 </div>
               </div>
             </div>

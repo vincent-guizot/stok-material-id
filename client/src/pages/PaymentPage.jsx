@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api.js';
 import { useCartStore } from '../store/useCartStore.js';
 import { formatRupiah } from '../utils/formatters.js';
+import { useSettings } from '../hooks/useSettings.js';
 import MaterialImage from '../components/MaterialImage.jsx';
 import PrintReceiptModal from '../components/PrintReceiptModal.jsx';
 import confetti from 'canvas-confetti';
@@ -22,6 +23,11 @@ import {
   Info,
 } from 'lucide-react';
 
+const newKey = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `k-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+
 export default function PaymentPage({ onBackToPOS }) {
   const navigate = useNavigate();
   const handleBackToPOS = onBackToPOS || (() => navigate('/pos'));
@@ -34,10 +40,23 @@ export default function PaymentPage({ onBackToPOS }) {
     updateQty,
     removeItem,
     clearCart,
-    getSubtotal,
+    getTotals,
     getItemCount,
     setCustomer,
+    wholesaleOn,
   } = useCartStore();
+  const { taxRate, allowMinusStock } = useSettings();
+
+  // Produk yang total penjualannya (semua baris, satuan dasar) melebihi stok tercatat
+  const minusItems = (() => {
+    const byProduct = new Map();
+    for (const it of items) {
+      const cur = byProduct.get(it.productId) || { name: it.productName, unit: it.baseUnit, stock: Number(it.currentStockBase) || 0, sold: 0 };
+      cur.sold += (Number(it.qty) || 0) * (Number(it.conversionFactor) || 1);
+      byProduct.set(it.productId, cur);
+    }
+    return [...byProduct.values()].filter((m) => m.sold > m.stock);
+  })();
 
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash' | 'transfer' | 'card' | 'kasbon'
   const [cashGiven, setCashGiven] = useState('');
@@ -46,18 +65,17 @@ export default function PaymentPage({ onBackToPOS }) {
   const [successTransaction, setSuccessTransaction] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const subtotal = getSubtotal();
-  const discountAmount = Math.min(subtotal, discount);
-  const taxAmount = 0;
-  const total = subtotal - discountAmount + taxAmount;
+  // Rumus identik dengan server (utils/calc.js <-> server utils/money.js). Server tetap memverifikasi.
+  const {
+    subtotal,
+    discount: discountAmount,
+    taxAmount,
+    total,
+  } = getTotals(taxRate);
 
-  // Generate invoice number preview
-  const [invoiceNumber] = useState(() => {
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const rand = Math.floor(1000 + Math.random() * 9000);
-    return `INV-${dateStr}-${rand}`;
-  });
+  // Kunci anti-submit ganda: satu kunci per transaksi, dibuat saat checkout pertama,
+  // dipakai ulang bila diulang (jaringan lambat), dan dibuat baru setelah berhasil.
+  const idempotencyKeyRef = useRef(null);
 
   const numCashGiven = parseFloat(cashGiven) || 0;
   const changeAmount = Math.max(0, numCashGiven - total);
@@ -77,7 +95,7 @@ export default function PaymentPage({ onBackToPOS }) {
   const mandorCreditLimit = parseFloat(currentMandor?.creditLimit) || 0;
   const mandorCurrentDebt = parseFloat(currentMandor?.currentDebt) || 0;
   const mandorRemainingLimit = Math.max(0, mandorCreditLimit - mandorCurrentDebt);
-  const isKasbonExceeded = paymentMethod === 'kasbon' && mandorCreditLimit > 0 && total > mandorRemainingLimit;
+  const isKasbonExceeded = paymentMethod === 'kasbon' && total > mandorRemainingLimit;
 
   // Handle Submit Checkout
   const handleCheckout = useCallback(async () => {
@@ -105,25 +123,29 @@ export default function PaymentPage({ onBackToPOS }) {
     setIsSubmitting(true);
 
     try {
+      const methodCode = { cash: 'CASH', transfer: 'TRANSFER', card: 'CARD', kasbon: 'DEBT' }[paymentMethod];
+      // Tunai: kirim uang yang DITERIMA; server menghitung kembalian. Metode lain: pas sebesar total.
+      const payAmount = paymentMethod === 'cash' ? numCashGiven : total;
+
       const payload = {
         customerId: selectedCustomer ? selectedCustomer.id : null,
-        discount,
+        discountPercent: discount,
         notes: notes || '',
+        useWholesale: wholesaleOn,
         items: items.map((item) => ({
           productId: item.productId,
           unitId: item.unitId,
           qty: item.qty,
         })),
-        paymentMethod: (paymentMethod === 'kasbon' ? 'DEBT' : paymentMethod).toUpperCase(),
         payments: [
           {
-            method: (paymentMethod === 'kasbon' ? 'DEBT' : paymentMethod).toUpperCase(),
-            paymentMethod: (paymentMethod === 'kasbon' ? 'DEBT' : paymentMethod).toUpperCase(),
-            amount: total,
+            method: methodCode,
+            amount: payAmount,
             referenceNo: referenceNumber || null,
-            referenceNumber: referenceNumber || null,
           },
         ],
+        expectedTotal: total,
+        idempotencyKey: (idempotencyKeyRef.current ??= newKey()),
       };
 
       const res = await api.post('/transactions', payload);
@@ -136,12 +158,12 @@ export default function PaymentPage({ onBackToPOS }) {
         origin: { y: 0.6 },
       });
 
+      // Struk memakai angka dari server (bukan hitungan layar).
       setSuccessTransaction({
         ...transactionData,
-        cashGiven: numCashGiven,
-        change: changeAmount,
         customerName: selectedCustomer ? selectedCustomer.name : 'Pembeli Umum',
       });
+      idempotencyKeyRef.current = null;
 
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
@@ -165,9 +187,9 @@ export default function PaymentPage({ onBackToPOS }) {
     discount,
     notes,
     referenceNumber,
-    changeAmount,
     queryClient,
     clearCart,
+    wholesaleOn,
   ]);
 
   // Keyboard shortcut F5 to submit
@@ -224,12 +246,13 @@ export default function PaymentPage({ onBackToPOS }) {
         <div className="flex items-center gap-3">
           <div className="px-3 py-1.5 bg-white border border-[#DEDCCF] rounded-control text-xs font-mono font-bold text-[#252922] shadow-xs">
             <span className="text-[#8C877D] font-normal mr-1">No. Transaksi:</span>
-            {invoiceNumber}
+            <span className="font-sans font-semibold text-[#625D53]">dibuat otomatis saat disimpan</span>
           </div>
 
           <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] hover:bg-[#F7F4ED] transition shadow-xs"
+            disabled
+            title="Nota bisa dicetak setelah transaksi diselesaikan"
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] transition shadow-xs opacity-50 cursor-not-allowed"
           >
             <Printer className="w-3.5 h-3.5 text-[#234536]" />
             <span>Cetak Nota</span>
@@ -293,6 +316,7 @@ export default function PaymentPage({ onBackToPOS }) {
                       </td>
                       <td className="py-3 text-right font-semibold text-[#252922]">
                         {formatRupiah(item.unitPrice)}
+                        {item.tierLabel && <div className="text-[10px] font-bold text-[#16845B]">{item.tierLabel}</div>}
                       </td>
                       <td className="py-3">
                         <div className="flex items-center justify-center gap-1.5">
@@ -364,7 +388,7 @@ export default function PaymentPage({ onBackToPOS }) {
               {[
                 { id: 'cash', label: 'Tunai', desc: 'Bayar dengan uang tunai', icon: Banknote },
                 { id: 'transfer', label: 'Transfer / QRIS', desc: 'Pembayaran digital', icon: QrCode },
-                { id: 'qris', label: 'QRIS', desc: 'Pembayaran QR', icon: QrCode },
+                { id: 'card', label: 'Kartu', desc: 'Debit / Kredit', icon: CreditCard },
                 { id: 'kasbon', label: 'Kasbon Mandor', desc: 'Piutang mandor', icon: Users },
               ].map((m) => {
                 const isSelected = paymentMethod === m.id;
@@ -396,6 +420,15 @@ export default function PaymentPage({ onBackToPOS }) {
               })}
             </div>
 
+            {allowMinusStock && minusItems.length > 0 && (
+              <div className="p-3 rounded-control bg-red-50 border border-red-200 flex items-start gap-2 text-xs text-[#C62828] font-bold">
+                <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  Stok akan menjadi minus: {minusItems.map((m) => `${m.name} (stok ${m.stock} ${m.unit}, dijual ${m.sold} ${m.unit})`).join('; ')}.
+                </span>
+              </div>
+            )}
+
             <div className="p-3 rounded-control bg-amber-50/60 border border-amber-200/80 flex items-start gap-2 text-xs text-[#625D53]">
               <Info className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
               <span>
@@ -424,20 +457,24 @@ export default function PaymentPage({ onBackToPOS }) {
                 <span className="font-bold text-[#252922]">{formatRupiah(subtotal)}</span>
               </div>
               <div className="flex items-center justify-between text-[#625D53]">
-                <span>Diskon (Rp)</span>
+                <span>Diskon ({discount}%)</span>
                 <span className="font-bold text-[#C62828]">- {formatRupiah(discountAmount)}</span>
               </div>
-              <div className="flex items-center justify-between text-[#625D53]">
-                <span>Pajak</span>
-                <span className="font-bold text-[#252922]">{formatRupiah(taxAmount)}</span>
-              </div>
+              {taxRate > 0 && (
+                <div className="flex items-center justify-between text-[#625D53]">
+                  <span>Pajak (PPN {taxRate}%)</span>
+                  <span className="font-bold text-[#252922]">{formatRupiah(taxAmount)}</span>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-[#DEDCCF] flex items-baseline justify-between">
                 <div>
                   <div className="text-xs font-extrabold text-[#252922] uppercase tracking-wider">
                     Total Belanja
                   </div>
-                  <div className="text-[10px] text-[#625D53]">Total sesuai nota</div>
+                  {taxRate > 0 && (
+                    <div className="text-[10px] text-[#625D53]">Sudah termasuk PPN {taxRate}%</div>
+                  )}
                 </div>
                 <div className="text-2xl font-black text-[#234536] tracking-tight">
                   {formatRupiah(total)}
@@ -501,7 +538,7 @@ export default function PaymentPage({ onBackToPOS }) {
                 <select
                   value={selectedCustomer?.id || ''}
                   onChange={(e) => {
-                    const c = customers.find((cust) => cust.id === parseInt(e.target.value, 10));
+                    const c = customers.find((cust) => String(cust.id) === e.target.value);
                     setCustomer(c || null);
                   }}
                   className="w-full p-2.5 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]"
@@ -535,7 +572,7 @@ export default function PaymentPage({ onBackToPOS }) {
               </div>
             )}
 
-            {(paymentMethod === 'transfer' || paymentMethod === 'qris') && (
+            {(paymentMethod === 'transfer' || paymentMethod === 'card') && (
               <div className="pt-4 border-t border-[#DEDCCF] space-y-2">
                 <label className="text-[11px] font-semibold text-[#625D53] block">
                   Nomor Referensi / No. Bukti Transaksi (Opsional)

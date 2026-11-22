@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { parseCsv, pick, toNum } from '../utils/csv.js';
 import api from '../services/api.js';
 import { formatRupiah } from '../utils/formatters.js';
 import MaterialImage from '../components/MaterialImage.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Toast from '../components/Toast.jsx';
+import WholesaleTab from './master/WholesaleTab.jsx';
+import { EmptyState } from '../components/ui/common.jsx';
 import { exportToCsv } from '../utils/exportCsv.js';
 import {
   Database,
@@ -25,7 +28,6 @@ import {
   Image as ImageIcon,
   Building2,
   Users,
-  Percent,
 } from 'lucide-react';
 
 export default function MasterDataPage({ subTab, setSubTab }) {
@@ -47,6 +49,9 @@ export default function MasterDataPage({ subTab, setSubTab }) {
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [brandFilter, setBrandFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -65,19 +70,50 @@ export default function MasterDataPage({ subTab, setSubTab }) {
   const imageInputRef = React.useRef(null);
   const handleImportCsv = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const text = evt.target.result;
-        const lines = text.split(/\r?\n/).filter(Boolean);
-        showToast('success', `Berhasil membaca file ${file.name} (${lines.length - 1} baris material). Impor ke database belum tersedia; belum ada data yang disimpan.`);
-      } catch {
-        showToast('error', 'Gagal memproses file CSV import.');
+    reader.onload = async (evt) => {
+      const rows = parseCsv(evt.target.result);
+      if (rows.length === 0) {
+        showToast('error', 'File kosong atau format salah. Baris pertama harus berisi judul kolom.');
+        return;
       }
+      const catByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+      const brandByName = new Map(brands.map((b) => [b.name.toLowerCase(), b.id]));
+      let ok = 0;
+      let firstErr = '';
+      for (const r of rows) {
+        const baseUnit = pick(r, 'satuan', 'baseUnit', 'unit') || 'Pcs';
+        try {
+          await api.post('/products', {
+            sku: pick(r, 'sku', 'kode'),
+            name: pick(r, 'nama', 'name', 'produk'),
+            baseUnit,
+            categoryId: catByName.get(pick(r, 'kategori', 'category').toLowerCase()) || null,
+            brandId: brandByName.get(pick(r, 'merek', 'brand').toLowerCase()) || null,
+            minStock: toNum(pick(r, 'stokMin', 'minStock')),
+            initialStock: toNum(pick(r, 'stokAwal', 'stok', 'initialStock')),
+            location: pick(r, 'lokasi', 'location'),
+            units: [{
+              unitName: baseUnit,
+              conversionFactor: 1,
+              isBase: true,
+              level: 1,
+              buyPrice: toNum(pick(r, 'hargaBeli', 'buyPrice')),
+              sellPrice: toNum(pick(r, 'hargaJual', 'sellPrice')),
+            }],
+          });
+          ok++;
+        } catch (err) {
+          if (!firstErr) firstErr = err.response?.data?.message || 'Gagal menyimpan baris.';
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      const fail = rows.length - ok;
+      showToast(fail ? 'error' : 'success', `Impor selesai: ${ok} produk tersimpan${fail ? `, ${fail} gagal (${firstErr})` : ''}.`);
     };
     reader.readAsText(file);
-    e.target.value = '';
   };
 
   // Dialog states for Sub Tabs
@@ -87,21 +123,10 @@ export default function MasterDataPage({ subTab, setSubTab }) {
 
   const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
   const [newBrandName, setNewBrandName] = useState('');
-  const [newBrandCat, setNewBrandCat] = useState('Semen & Mortar');
+  const [editingBrand, setEditingBrand] = useState(null);
   const [newBrandOrigin, setNewBrandOrigin] = useState('');
 
-  const [isConversionModalOpen, setIsConversionModalOpen] = useState(false);
-  const [newConvUpper, setNewConvUpper] = useState('');
-  const [newConvBase, setNewConvBase] = useState('');
-  const [newConvFactor, setNewConvFactor] = useState('');
-  const [newConvCategory, setNewConvCategory] = useState('Material');
-  const [newConvDesc, setNewConvDesc] = useState('');
 
-  const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
-  const [newWsName, setNewWsName] = useState('');
-  const [newWsMinQty, setNewWsMinQty] = useState('');
-  const [newWsDiscount, setNewWsDiscount] = useState('');
-  const [newWsTarget, setNewWsTarget] = useState('Mandor & Kontraktor');
 
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [newCustName, setNewCustName] = useState('');
@@ -111,7 +136,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
 
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const [newSupName, setNewSupName] = useState('');
-  const [newSupCategory, setNewSupCategory] = useState('Semen & Mortar');
+  const [newSupCategory, setNewSupCategory] = useState('');
   const [newSupPic, setNewSupPic] = useState('');
   const [newSupPhone, setNewSupPhone] = useState('');
   const [newSupAddress, setNewSupAddress] = useState('');
@@ -292,11 +317,12 @@ export default function MasterDataPage({ subTab, setSubTab }) {
     setProdName(product.name);
     setProdSku(product.sku);
     setProdCatId(product.categoryId || '');
+    setProdBrand(product.brandId || '');
     setProdBaseUnit(product.baseUnit || 'Pcs');
     setProdBuyPrice(product.units?.[0]?.buyPrice || '');
     setProdSellPrice(product.units?.[0]?.sellPrice || '');
-    setProdMinStock(product.minStockBase || '10');
-    setProdInitialStock(product.currentStockBase || '100');
+    setProdMinStock(product.minStock ?? '10');
+    setProdInitialStock(String(product.currentStockBase ?? 0));
     setProdDesc('');
     setIsEditMode(false);
     setIsAddDrawerOpen(true);
@@ -308,11 +334,12 @@ export default function MasterDataPage({ subTab, setSubTab }) {
     setProdName(product.name);
     setProdSku(product.sku);
     setProdCatId(product.categoryId || '');
+    setProdBrand(product.brandId || '');
     setProdBaseUnit(product.baseUnit || 'Pcs');
     setProdBuyPrice(product.units?.[0]?.buyPrice || '');
     setProdSellPrice(product.units?.[0]?.sellPrice || '');
-    setProdMinStock(product.minStockBase || '10');
-    setProdInitialStock(product.currentStockBase || '100');
+    setProdMinStock(product.minStock ?? '10');
+    setProdInitialStock(String(product.currentStockBase ?? 0));
     setProdDesc('');
     setIsEditMode(true);
     setIsAddDrawerOpen(true);
@@ -339,6 +366,14 @@ export default function MasterDataPage({ subTab, setSubTab }) {
       setFormError('Nama produk dan SKU wajib diisi.');
       return;
     }
+    if (!prodCatId) {
+      setFormError('Pilih kategori produk.');
+      return;
+    }
+    if (!(parseFloat(prodSellPrice) > 0)) {
+      setFormError('Harga jual harus lebih dari 0.');
+      return;
+    }
 
     if (isEditMode && selectedProduct) {
       updateProductMutation.mutate({
@@ -346,10 +381,10 @@ export default function MasterDataPage({ subTab, setSubTab }) {
         payload: {
           name: prodName,
           sku: prodSku,
-          categoryId: prodCatId || (categories[0]?.id || 1),
+          categoryId: prodCatId,
+          brandId: prodBrand || null,
           baseUnit: prodBaseUnit,
           minStock: parseFloat(prodMinStock) || 10,
-          currentStockBase: parseFloat(prodInitialStock) || 0,
           buyPrice: parseFloat(prodBuyPrice) || 0,
           sellPrice: parseFloat(prodSellPrice) || 0,
         },
@@ -360,7 +395,8 @@ export default function MasterDataPage({ subTab, setSubTab }) {
     const payload = {
       name: prodName,
       sku: prodSku,
-      categoryId: prodCatId || (categories[0]?.id || 1),
+      categoryId: prodCatId,
+      brandId: prodBrand || null,
       baseUnit: prodBaseUnit,
       minStock: parseFloat(prodMinStock) || 10,
       initialStock: parseFloat(prodInitialStock) || 0,
@@ -368,8 +404,8 @@ export default function MasterDataPage({ subTab, setSubTab }) {
         {
           unitName: prodBaseUnit,
           conversionFactor: 1,
-          buyPrice: parseFloat(prodBuyPrice) || 1000,
-          sellPrice: parseFloat(prodSellPrice) || 1500,
+          buyPrice: parseFloat(prodBuyPrice) || 0,
+          sellPrice: parseFloat(prodSellPrice),
           level: 1,
         },
       ],
@@ -389,31 +425,86 @@ export default function MasterDataPage({ subTab, setSubTab }) {
   ];
 
   // Dynamic master data states
-  const [brands, setBrands] = useState([]);
+  // Merek tersimpan di server (/brands)
+  const { data: brands = [] } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => (await api.get('/brands')).data.data,
+  });
 
-  const [unitConversions, setUnitConversions] = useState([]);
+  const saveBrandMutation = useMutation({
+    mutationFn: async ({ id, name, origin }) =>
+      id ? api.put(`/brands/${id}`, { name, origin }) : api.post('/brands', { name, origin }),
+    onSuccess: (_r, v) => {
+      queryClient.invalidateQueries({ queryKey: ['brands'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setIsBrandModalOpen(false);
+      setEditingBrand(null);
+      setNewBrandName('');
+      setNewBrandOrigin('');
+      showToast('success', `Merek "${v.name.trim()}" berhasil disimpan.`);
+    },
+    onError: (err) => showToast('error', err.response?.data?.message || 'Gagal menyimpan merek.'),
+  });
+  const deleteBrandMutation = useMutation({
+    mutationFn: async (id) => api.delete(`/brands/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brands'] });
+      showToast('success', 'Merek dihapus.');
+    },
+    onError: (err) => showToast('error', err.response?.data?.message || 'Gagal menghapus merek.'),
+  });
+  const openBrandModal = (b) => {
+    setEditingBrand(b || null);
+    setNewBrandName(b?.name || '');
+    setNewBrandOrigin(b?.origin || '');
+    setIsBrandModalOpen(true);
+  };
 
-  const [wholesaleRules, setWholesaleRules] = useState([]);
+  const visibleProducts = products.filter(
+    (p) => (categoryFilter === 'all' || String(p.categoryId) === categoryFilter) && (brandFilter === 'all' || p.brandId === brandFilter),
+  );
 
-  const customerList = serverCustomers.map((c) => ({
+  const pageCount = Math.max(1, Math.ceil(visibleProducts.length / PAGE_SIZE));
+  const curPage = Math.min(page, pageCount);
+  const pageRows = visibleProducts.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
+
+  // Aturan konversi satuan = satuan jual nyata dari tiap produk (hanya baca; diubah lewat form produk)
+  const unitConversions = products.flatMap((p) =>
+    (p.units || [])
+      .filter((u) => Number(u.conversionFactor) > 1)
+      .map((u) => ({
+        id: u.id,
+        product: p.name,
+        upperUnit: u.unitName,
+        baseUnit: p.baseUnit,
+        factor: Number(u.conversionFactor),
+        category: p.category?.name || '-',
+      })),
+  );
+
+
+  const customerList = serverCustomers.length > 0
+    ? serverCustomers.map((c) => ({
         name: c.name,
         phone: c.phone || '-',
         address: c.address || '-',
         limit: formatRupiah(c.creditLimit || 0),
         type: (c.creditLimit || 0) > 0 ? 'Mandor Prioritas' : 'Pelanggan Umum',
-      }));
+      }))
+    : [];
 
-  const supplierList = serverSuppliers.map((s, idx) => ({
-        code: `SUP-${String(idx + 1).padStart(3, '0')}`,
+  const supplierList = serverSuppliers.length > 0
+    ? serverSuppliers.map((s) => ({
+        code: s.code || '-',
         name: s.name,
         category: s.category || 'Bahan Bangunan',
         phone: s.phone || '-',
         address: s.address || '-',
-      }));
+      }))
+    : [];
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {['brands', 'units', 'wholesale'].includes(activeTabKey) && <p role="status" className="p-3 bg-amber-50 border rounded-lg text-sm">Daftar ini merupakan referensi sesi ini. Belum tersimpan di server dan belum diterapkan otomatis ke harga POS. Konversi transaksi memakai satuan per produk.</p>}
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -480,7 +571,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
           iconBg="bg-emerald-50 text-[#16845B]"
           title="Total Produk"
           value={`${products.length} Item`}
-          subtitle="Material dalam katalog"
+          subtitle={`${products.filter((p) => p.isActive !== false).length} Aktif • ${products.filter((p) => p.isActive === false).length} Non-aktif`}
         />
 
         <StatCard
@@ -494,17 +585,17 @@ export default function MasterDataPage({ subTab, setSubTab }) {
         <StatCard
           icon={Tags}
           iconBg="bg-amber-50 text-[#D97706]"
-          title="Merek Terdaftar"
-          value={`${brands.length} Merek`}
-          subtitle="Tiga Roda, Gresik, KS, dll"
+          title="Produk Multi-Satuan"
+          value={`${products.filter((p) => (p.units || []).length > 1).length} Produk`}
+          subtitle="Punya lebih dari satu satuan jual"
         />
 
         <StatCard
           icon={Ruler}
           iconBg="bg-emerald-50 text-[#16845B]"
-          title="Satuan Multi-Tingkat"
-          value={`${unitConversions.length} Aturan`}
-          subtitle="Sak, Batang, Palet, Meter, dll"
+          title="Satuan Terdaftar"
+          value={`${new Set(products.flatMap((p) => (p.units || []).map((u) => u.unitName))).size} Satuan`}
+          subtitle="Dari seluruh produk"
         />
       </div>
 
@@ -560,19 +651,22 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                 ))}
               </select>
 
-              <select className="px-3 py-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]">
+              <select
+                value={brandFilter}
+                onChange={(e) => setBrandFilter(e.target.value)}
+                className="px-3 py-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]"
+              >
                 <option value="all">Semua Merek</option>
-                <option value="indocement">Tiga Roda</option>
-                <option value="semen-gresik">Semen Gresik</option>
-                <option value="citicon">Citicon</option>
-                <option value="rucika">Rucika</option>
-                <option value="dulux">Dulux</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
               </select>
 
               <button
                 onClick={() => {
                   setSearch('');
                   setCategoryFilter('all');
+                  setBrandFilter('all');
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 bg-[#F7F4ED] hover:bg-[#ECEAE2] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#625D53] transition"
               >
@@ -607,14 +701,14 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                           Memuat master data produk...
                         </td>
                       </tr>
-                    ) : products.length === 0 ? (
+                    ) : visibleProducts.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="py-12 text-center text-xs text-[#8C877D]">
                           Belum ada data produk material.
                         </td>
                       </tr>
                     ) : (
-                      products
+                      pageRows
                         .map((p, idx) => {
                           const primaryUnit = p.units?.[p.units.length - 1] || p.units?.[0] || {};
                           const isOutOfStock = p.currentStockBase <= 0;
@@ -632,7 +726,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                               onClick={() => handleRowClick(p)}
                               className="hover:bg-[#F7F4ED]/60 transition cursor-pointer"
                             >
-                              <td className="py-3 px-3 text-[#8C877D] font-medium">{idx + 1}</td>
+                              <td className="py-3 px-3 text-[#8C877D] font-medium">{(curPage - 1) * PAGE_SIZE + idx + 1}</td>
                               <td className="py-3 px-3">
                                 <div className="flex items-center gap-2.5">
                                   <MaterialImage name={p.name} sku={p.sku} className="w-8 h-8 shrink-0" />
@@ -644,17 +738,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                                 {p.category?.name || 'Material Bangunan'}
                               </td>
                               <td className="py-3 px-3 text-[#625D53] font-medium">
-                                {p.name.includes('Gresik')
-                                  ? 'Semen Gresik'
-                                  : p.name.includes('Roda')
-                                  ? 'Tiga Roda'
-                                  : p.name.includes('Hebel')
-                                  ? 'Citicon'
-                                  : p.name.includes('Besi')
-                                  ? 'KS'
-                                  : p.name.includes('Dulux')
-                                  ? 'Dulux'
-                                  : 'Standard'}
+                                {p.brand?.name || '-'}
                               </td>
                               <td className="py-3 px-3 text-center font-bold text-[#252922]">
                                 {primaryUnit.unitName || p.baseUnit}
@@ -706,12 +790,32 @@ export default function MasterDataPage({ subTab, setSubTab }) {
 
               <div className="p-3 border-t border-[#DEDCCF] bg-[#F7F4ED]/50 flex items-center justify-between text-xs text-[#625D53]">
                 <div>
-                  Tampilkan <span className="font-bold">{products.length}</span> produk
+                  Menampilkan <span className="font-bold">{pageRows.length}</span> dari <span className="font-bold">{visibleProducts.length}</span> produk
                 </div>
                 <div className="flex items-center gap-1">
-                  <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&lt;</button>
-                  <button className="px-2.5 py-1 rounded bg-[#234536] text-white font-bold">1</button>
-                  <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&gt;</button>
+                  <button
+                    disabled={curPage <= 1}
+                    onClick={() => setPage(curPage - 1)}
+                    className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold disabled:opacity-40"
+                  >
+                    &lt;
+                  </button>
+                  {Array.from({ length: pageCount }, (_, k) => k + 1).map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setPage(n)}
+                      className={`px-2.5 py-1 rounded font-bold ${n === curPage ? 'bg-[#234536] text-white' : 'border border-[#DEDCCF] bg-white'}`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <button
+                    disabled={curPage >= pageCount}
+                    onClick={() => setPage(curPage + 1)}
+                    className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold disabled:opacity-40"
+                  >
+                    &gt;
+                  </button>
                 </div>
               </div>
             </div>
@@ -864,12 +968,10 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                               onChange={(e) => setProdBrand(e.target.value)}
                               className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold text-[#252922]"
                             >
-                              <option value="">Pilih Merek</option>
-                              <option value="indocement">Tiga Roda</option>
-                              <option value="semen-gresik">Semen Gresik</option>
-                              <option value="citicon">Citicon</option>
-                              <option value="rucika">Rucika</option>
-                              <option value="dulux">Dulux</option>
+                              <option value="">Tanpa merek</option>
+                              {brands.map((b) => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                              ))}
                             </select>
                           </div>
                         </div>
@@ -1121,7 +1223,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
               </p>
             </div>
             <button
-              onClick={() => setIsBrandModalOpen(true)}
+              onClick={() => openBrandModal(null)}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -1141,15 +1243,25 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
-                {brands.map((b, idx) => (
-                  <tr key={idx} className="hover:bg-[#F7F4ED]/50 transition">
+                {brands.length === 0 && (
+                  <tr><td colSpan={5} className="py-10 text-center text-[#8C877D]">Belum ada merek. Klik "Tambah Merek".</td></tr>
+                )}
+                {brands.map((b) => (
+                  <tr key={b.id} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 font-extrabold text-[#252922]">{b.name}</td>
-                    <td className="py-3 px-3 text-[#625D53]">{b.category}</td>
-                    <td className="py-3 px-3 text-[#252922]">{b.origin}</td>
-                    <td className="py-3 px-3 text-center font-bold text-[#234536]">{b.count} Item</td>
+                    <td className="py-3 px-3 text-[#625D53]">{b.mainCategory || '-'}</td>
+                    <td className="py-3 px-3 text-[#252922]">{b.origin || '-'}</td>
+                    <td className="py-3 px-3 text-center font-bold text-[#234536]">{b.productCount} Item</td>
                     <td className="py-3 px-3 text-center">
-                      <button className="p-1 hover:bg-slate-200 rounded text-[#234536]">
+                      <button onClick={() => openBrandModal(b)} title="Ubah" className="p-1 hover:bg-slate-200 rounded text-[#234536]">
                         <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => window.confirm(`Hapus merek "${b.name}"?`) && deleteBrandMutation.mutate(b.id)}
+                        title="Hapus"
+                        className="p-1 hover:bg-red-50 rounded text-[#C62828]"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
                   </tr>
@@ -1174,13 +1286,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                 Aturan pemotongan otomatis stok dasar saat kasir menjual satuan tingkat atas (Sak, Batang, Palet).
               </p>
             </div>
-            <button
-              onClick={() => setIsConversionModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Rumus Konversi</span>
-            </button>
+            <span className="text-[11px] text-[#8C877D] max-w-[260px]">Satuan dan faktor konversi diatur di form produk (Tambah/Ubah Produk).</span>
           </div>
 
           <div className="overflow-x-auto">
@@ -1190,20 +1296,23 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                   <th className="py-2.5 px-3">SATUAN JUAL (UPPER)</th>
                   <th className="py-2.5 px-3">SATUAN DASAR (BASE)</th>
                   <th className="py-2.5 px-3 text-center">FAKTOR PENGALI</th>
+                  <th className="py-2.5 px-3">PRODUK</th>
                   <th className="py-2.5 px-3">KATEGORI MATERIAL</th>
-                  <th className="py-2.5 px-3">PENJELASAN KONVERSI</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
-                {unitConversions.map((u, idx) => (
-                  <tr key={idx} className="hover:bg-[#F7F4ED]/50 transition">
+                {unitConversions.length === 0 && (
+                  <tr><td colSpan={5} className="py-10 text-center text-[#8C877D]">Belum ada produk dengan satuan bertingkat.</td></tr>
+                )}
+                {unitConversions.map((u) => (
+                  <tr key={u.id} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 font-bold text-[#234536]">{u.upperUnit}</td>
                     <td className="py-3 px-3 font-medium text-[#252922]">{u.baseUnit}</td>
                     <td className="py-3 px-3 text-center font-black text-sm text-[#16845B]">
                       {u.factor}x
                     </td>
+                    <td className="py-3 px-3 text-[#252922]">{u.product}</td>
                     <td className="py-3 px-3 text-[#625D53]">{u.category}</td>
-                    <td className="py-3 px-3 text-[#8C877D]">{u.description}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1215,49 +1324,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
       {/* ======================================================== */}
       {/* TAB 5: HARGA GROSIR                                      */}
       {/* ======================================================== */}
-      {activeTabKey === 'wholesale' && (
-        <div className="bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#DEDCCF]">
-            <div>
-              <h3 className="font-extrabold text-sm text-[#252922]">
-                Tier & Aturan Harga Grosir Toko
-              </h3>
-              <p className="text-xs text-[#625D53]">
-                Pengurangan harga otomatis saat mandor / kontraktor belanja dalam volume tertentu.
-              </p>
-            </div>
-            <button
-              onClick={() => setIsWholesaleModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
-            >
-              <Percent className="w-3.5 h-3.5" />
-              <span>Buat Aturan Grosir Baru</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {wholesaleRules.map((w, idx) => (
-              <div
-                key={idx}
-                className="p-4 rounded-card bg-[#F7F4ED]/60 border border-[#DEDCCF] space-y-2 hover:bg-[#F7F4ED] transition"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-extrabold text-xs text-[#252922]">{w.name}</div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-[#16845B] font-bold text-[10px]">
-                    {w.discount}
-                  </span>
-                </div>
-                <div className="text-xs text-[#625D53]">
-                  Minimal Pembelian: <span className="font-bold text-[#252922]">{w.minQty}</span>
-                </div>
-                <div className="text-[11px] text-[#8C877D]">
-                  Berlaku untuk: <span className="font-semibold text-[#234536]">{w.target}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {activeTabKey === 'wholesale' && <WholesaleTab products={products} onToast={showToast} />}
 
       {/* ======================================================== */}
       {/* TAB 6: PELANGGAN                                         */}
@@ -1294,6 +1361,9 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
+                {customerList.length === 0 && (
+                  <tr><td colSpan={5}><EmptyState title="Belum ada mandor / pelanggan" desc="Tambahkan mandor langganan lewat tombol di atas untuk mulai mencatat kasbon." /></td></tr>
+                )}
                 {customerList.map((c, idx) => (
                   <tr key={idx} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 font-bold text-[#252922]">{c.name}</td>
@@ -1348,6 +1418,9 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
+                {supplierList.length === 0 && (
+                  <tr><td colSpan={5}><EmptyState title="Belum ada supplier" desc="Tambahkan supplier di menu Supplier untuk mencatat barang masuk." /></td></tr>
+                )}
                 {supplierList.map((s, idx) => (
                   <tr key={idx} className="hover:bg-[#F7F4ED]/50 transition">
                     <td className="py-3 px-3 font-mono font-bold text-[#234536]">{s.code}</td>
@@ -1427,23 +1500,16 @@ export default function MasterDataPage({ subTab, setSubTab }) {
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">
           <div className="bg-white rounded-card max-w-sm w-full p-5 shadow-modal border border-[#DEDCCF] space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-              <h3 className="font-extrabold text-sm text-[#252922]">Tambah Merek Pabrikan</h3>
-              <button onClick={() => setIsBrandModalOpen(false)} className="text-[#8C877D] hover:text-[#252922]">
+              <h3 className="font-extrabold text-sm text-[#252922]">{editingBrand ? 'Ubah Merek' : 'Tambah Merek Pabrikan'}</h3>
+              <button onClick={() => { setIsBrandModalOpen(false); setEditingBrand(null); }} className="text-[#8C877D] hover:text-[#252922]">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!newBrandName) return;
-                setBrands([
-                  ...brands,
-                  { name: newBrandName, category: newBrandCat, origin: newBrandOrigin || 'Indonesia', count: 0 },
-                ]);
-                setIsBrandModalOpen(false);
-                setNewBrandName('');
-                setNewBrandOrigin('');
-                showToast('success', `Merek "${newBrandName}" berhasil ditambahkan!`);
+                if (!newBrandName.trim()) return;
+                saveBrandMutation.mutate({ id: editingBrand?.id, name: newBrandName, origin: newBrandOrigin });
               }}
               className="space-y-3 text-xs"
             >
@@ -1455,16 +1521,6 @@ export default function MasterDataPage({ subTab, setSubTab }) {
                   placeholder="Contoh: Holcim / Dynamix"
                   value={newBrandName}
                   onChange={(e) => setNewBrandName(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Kategori Utama</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Semen & Mortar"
-                  value={newBrandCat}
-                  onChange={(e) => setNewBrandCat(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
                 />
               </div>
@@ -1481,7 +1537,7 @@ export default function MasterDataPage({ subTab, setSubTab }) {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsBrandModalOpen(false)}
+                  onClick={() => { setIsBrandModalOpen(false); setEditingBrand(null); }}
                   className="px-3 py-1.5 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED]"
                 >
                   Batal
@@ -1499,204 +1555,6 @@ export default function MasterDataPage({ subTab, setSubTab }) {
       )}
 
       {/* 3. Modal Tambah Rumus Konversi */}
-      {isConversionModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-card max-w-sm w-full p-5 shadow-modal border border-[#DEDCCF] space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-              <h3 className="font-extrabold text-sm text-[#252922]">Tambah Rumus Konversi</h3>
-              <button onClick={() => setIsConversionModalOpen(false)} className="text-[#8C877D] hover:text-[#252922]">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!newConvUpper || !newConvBase || !newConvFactor) return;
-                setUnitConversions([
-                  ...unitConversions,
-                  {
-                    upperUnit: newConvUpper,
-                    baseUnit: newConvBase,
-                    factor: parseFloat(newConvFactor) || 1,
-                    category: newConvCategory || 'Material',
-                    description: newConvDesc || `1 ${newConvUpper} = ${newConvFactor} ${newConvBase}`,
-                  },
-                ]);
-                setIsConversionModalOpen(false);
-                setNewConvUpper('');
-                setNewConvBase('');
-                setNewConvFactor('');
-                setNewConvDesc('');
-                showToast('success', `Rumus konversi "${newConvUpper}" berhasil ditambahkan!`);
-              }}
-              className="space-y-3 text-xs"
-            >
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Satuan Jual (Tingkat Atas) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Sak (50 Kg)"
-                  value={newConvUpper}
-                  onChange={(e) => setNewConvUpper(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Satuan Dasar *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: Kg"
-                    value={newConvBase}
-                    onChange={(e) => setNewConvBase(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Faktor Pengali *</label>
-                  <input
-                    type="number"
-                    required
-                    placeholder="50"
-                    value={newConvFactor}
-                    onChange={(e) => setNewConvFactor(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Kategori Material</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Semen"
-                  value={newConvCategory}
-                  onChange={(e) => setNewConvCategory(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Penjelasan Konversi</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: 1 Sak = 50 Kg semen murni"
-                  value={newConvDesc}
-                  onChange={(e) => setNewConvDesc(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsConversionModalOpen(false)}
-                  className="px-3 py-1.5 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold shadow-xs"
-                >
-                  Simpan Rumus
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 4. Modal Tambah Aturan Grosir */}
-      {isWholesaleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-card max-w-sm w-full p-5 shadow-modal border border-[#DEDCCF] space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-              <h3 className="font-extrabold text-sm text-[#252922]">Tambah Aturan Harga Grosir</h3>
-              <button onClick={() => setIsWholesaleModalOpen(false)} className="text-[#8C877D] hover:text-[#252922]">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!newWsName || !newWsMinQty || !newWsDiscount) return;
-                setWholesaleRules([
-                  ...wholesaleRules,
-                  { name: newWsName, minQty: newWsMinQty, discount: newWsDiscount, target: newWsTarget },
-                ]);
-                setIsWholesaleModalOpen(false);
-                setNewWsName('');
-                setNewWsMinQty('');
-                setNewWsDiscount('');
-                showToast('success', `Aturan grosir "${newWsName}" berhasil ditambahkan!`);
-              }}
-              className="space-y-3 text-xs"
-            >
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Nama Aturan Grosir *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Grosir Pipa PVC AW"
-                  value={newWsName}
-                  onChange={(e) => setNewWsName(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Minimal Beli *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: 20 Batang"
-                    value={newWsMinQty}
-                    onChange={(e) => setNewWsMinQty(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-[#252922] block mb-1">Besaran Diskon *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: Diskon 8%"
-                    value={newWsDiscount}
-                    onChange={(e) => setNewWsDiscount(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="font-bold text-[#252922] block mb-1">Target Sasaran</label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Mandor & Kontraktor"
-                  value={newWsTarget}
-                  onChange={(e) => setNewWsTarget(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#DEDCCF] rounded-control"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsWholesaleModalOpen(false)}
-                  className="px-3 py-1.5 rounded-control border border-[#DEDCCF] font-bold hover:bg-[#F7F4ED]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold shadow-xs"
-                >
-                  Simpan Aturan
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* 5. Modal Tambah Mandor / Pelanggan */}
       {isCustomerModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">

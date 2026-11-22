@@ -1,526 +1,219 @@
-import React, { useState } from 'react';
-import {
-  HelpCircle,
-  Search,
-  BookOpen,
-  Video,
-  FileQuestion,
-  Headphones,
-  Info,
-  ChevronRight,
-  Play,
-  MessageCircle,
-  Mail,
-  Phone,
-  Clock,
-  X,
-  CheckCircle2,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { HelpCircle, Search, BookOpen, Video, FileQuestion, Headphones, Info, ChevronRight, Play, MessageCircle, Mail, Phone, Clock, Keyboard } from 'lucide-react';
+import api from '../services/api.js';
+import WorkerAvatar from '../components/WorkerAvatar.jsx';
+import { Modal, EmptyState, LoadingRows, ErrorBox } from '../components/ui/common.jsx';
+import { btnPrimary } from '../components/ui/helpers.js';
+
+const card = 'bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4';
+const match = (q, ...fields) => !q || fields.some((f) => String(f || '').toLowerCase().includes(q));
+const CONTACT_ICON = { whatsapp: MessageCircle, email: Mail, phone: Phone, hours: Clock };
+const CONTACT_HREF = {
+  whatsapp: (v) => `https://wa.me/62${v.replace(/\D/g, '').replace(/^0/, '')}`,
+  email: (v) => `mailto:${v}`,
+  phone: (v) => `tel:${v.replace(/\D/g, '')}`,
+};
+
+const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
 
 export default function HelpCenterPage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [expandedFaq, setExpandedFaq] = useState(null);
-  const [selectedGuide, setSelectedGuide] = useState(null);
-  const [activeVideo, setActiveVideo] = useState(null);
+  const [search, setSearch] = useState('');
+  const [openFaq, setOpenFaq] = useState(null);
+  const [guide, setGuide] = useState(null);
+  const [video, setVideo] = useState(null);
+  const q = useQuery({ queryKey: ['help'], queryFn: async () => (await api.get('/help')).data.data });
+  const term = search.trim().toLowerCase();
+  const data = useMemo(() => q.data || {}, [q.data]);
+  const list = (k) => data[k] || [];
 
-  const guideCards = [
-    {
-      num: '01',
-      title: 'Mulai Menggunakan StokMaterial.id',
-      desc: 'Pengenalan fitur utama dan pengaturan awal sistem toko bangunan.',
-      icon: '🧱',
-    },
-    {
-      num: '02',
-      title: 'Kelola Data Barang',
-      desc: 'Cara menambah barang, mengatur harga, stok, dan satuan bertingkat.',
-      icon: '📦',
-    },
-    {
-      num: '03',
-      title: 'Transaksi Penjualan',
-      desc: 'Langkah melakukan penjualan cepat di kasir dan cetak nota belanja.',
-      icon: '🛒',
-    },
-    {
-      num: '04',
-      title: 'Barang Masuk dari Supplier',
-      desc: 'Cara mencatat pembelian material dan penerimaan barang masuk (PO).',
-      icon: '🚚',
-    },
-    {
-      num: '05',
-      title: 'Kasbon Mandor dan Piutang',
-      desc: 'Kelola plafon kredit, pencatatan kasbon, dan cicilan mandor.',
-      icon: '👷‍♂️',
-    },
-    {
-      num: '06',
-      title: 'Laporan Keuangan',
-      desc: 'Cara melihat dan mencetak omzet penjualan, pembelian, dan laba rugi.',
-      icon: '📈',
-    },
-  ];
+  const guides = list('guide').filter((g) => match(term, g.title, g.body));
+  const videos = list('video').filter((v) => match(term, v.title, v.body));
+  const faqs = list('faq').filter((f) => match(term, f.title, f.body));
+  const shortcuts = list('shortcut').filter((s) => match(term, s.title, s.body));
+  const contacts = list('contact');
+  const about = list('about');
+  const nothing = term && !guides.length && !videos.length && !faqs.length && !shortcuts.length;
 
-  const videos = [
-    {
-      title: 'Cara Melakukan Penjualan di Kasir',
-      desc: 'Panduan lengkap transaksi penjualan untuk pemula.',
-      duration: '3:25',
-    },
-    {
-      title: 'Menambah Barang Baru & Multi Satuan',
-      desc: 'Cara input barang, harga, dan konversi sak ke kg.',
-      duration: '4:10',
-    },
-    {
-      title: 'Mengelola Kasbon Mandor & Plafon',
-      desc: 'Pencatatan kasbon dan pembayaran piutang mandor.',
-      duration: '5:22',
-    },
-    {
-      title: 'Mencetak Laporan Penjualan & Faktur',
-      desc: 'Cara generate dan export laporan ke format PDF/Excel.',
-      duration: '4:38',
-    },
-  ];
+  const splitGuide = (g) => {
+    const [summary, steps = ''] = String(g.body || '').split('\n\n');
+    return { summary, steps: steps.split('\n').filter(Boolean) };
+  };
 
-  const faqs = [
-    {
-      q: 'Bagaimana cara menambah barang baru?',
-      a: 'Buka menu Master Data > Data Produk, lalu klik tombol "+ Tambah Produk". Isi nama material, SKU, satuan utama, dan harga modal serta harga jual kasir.',
-    },
-    {
-      q: 'Cara melakukan penjualan dan mencetak nota?',
-      a: 'Pilih barang dari katalog Kasir Penjualan untuk memasukkan ke keranjang, lalu tekan F10 atau tombol "Lanjut ke Pembayaran". Pilih metode tunai/transfer/kasbon, masukkan nominal bayar, lalu klik "Selesaikan Transaksi (F10)". Anda dapat mencetak nota thermal atau faktur jalan.',
-    },
-    {
-      q: 'Bagaimana cara mencatat kasbon mandor?',
-      a: 'Pada halaman pembayaran di kasir, pilih metode "Kasbon Mandor" lalu pilih nama mandor terdaftar. Sistem akan memvalidasi apakah saldo masih dalam batas limit kredit. Anda juga dapat mencatat pembayaran cicilan pada menu "Buku Kasbon Mandor".',
-    },
-    {
-      q: 'Cara melihat laporan laba rugi?',
-      a: 'Buka menu Laporan Keuangan, pilih subtab "Ringkasan" atau "Laba Rugi". Anda dapat memfilter periode harian, mingguan, bulanan, atau tahunan.',
-    },
-    {
-      q: 'Apakah bisa export data ke Excel?',
-      a: 'Ya, seluruh data produk, transaksi, buku kasbon mandor, dan supplier dapat diekspor langsung ke format Excel (.xlsx) dengan menekan tombol "Export Data".',
-    },
-  ];
-
-  const shortcuts = [
-    { key: 'F1', desc: 'Kasir Penjualan (POS)' },
-    { key: 'F2', desc: 'Buku Kasbon Mandor' },
-    { key: 'F3', desc: 'Stok & Barang Masuk' },
-    { key: 'F4', desc: 'Laporan Keuangan' },
-    { key: 'F5', desc: 'Master Data Produk' },
-    { key: 'F6', desc: 'Data Mandor' },
-    { key: 'F7', desc: 'Data Supplier' },
-    { key: 'F8', desc: 'Pengaturan Toko & Pajak' },
-    { key: 'F9', desc: 'Pusat Bantuan' },
-    { key: 'F10', desc: 'Pembayaran / Selesaikan Transaksi' },
-    { key: 'Ctrl+K', desc: 'Fokus Pencarian Global' },
-    { key: 'Esc', desc: 'Batal / Kembali ke Kasir' },
+  const quick = [
+    { icon: BookOpen, title: 'Panduan Penggunaan', desc: 'Langkah demi langkah sistem', to: 'help-panduan' },
+    { icon: Video, title: 'Video Tutorial', desc: 'Ringkasan video panduan', to: 'help-video' },
+    { icon: FileQuestion, title: 'Pertanyaan Umum', desc: 'Jawaban pertanyaan umum', to: 'help-faq' },
+    { icon: Headphones, title: 'Hubungi Kami', desc: 'Tim kami siap membantu', to: 'help-kontak' },
+    { icon: Info, title: 'Tentang Aplikasi', desc: 'Versi & pintasan keyboard', to: 'help-tentang' },
   ];
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
-      {/* Top Banner with Friendly Greeting */}
-      <div className="bg-white rounded-card border border-[#DEDCCF] p-6 shadow-card flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
-        <div className="space-y-4 max-w-xl z-10">
+      <div className="bg-white rounded-card border border-[#DEDCCF] p-6 shadow-card flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-4 max-w-xl w-full">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#234536] text-white flex items-center justify-center shrink-0 shadow-sm">
-              <HelpCircle className="w-5 h-5" />
-            </div>
+            <div className="w-10 h-10 rounded-xl bg-[#234536] text-white flex items-center justify-center shrink-0 shadow-sm"><HelpCircle className="w-5 h-5" /></div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-extrabold text-[#252922] tracking-tight">
-                Pusat Bantuan
-              </h1>
-              <p className="text-xs text-[#625D53]">
-                Temukan panduan, video tutorial, dan jawaban atas pertanyaan Anda.
-              </p>
+              <h1 className="text-xl sm:text-2xl font-extrabold text-[#252922] tracking-tight">Pusat Bantuan</h1>
+              <p className="text-xs text-[#625D53]">Temukan panduan, video tutorial, dan jawaban atas pertanyaan Anda.</p>
             </div>
           </div>
-
-          {/* Search bar inside banner */}
           <div className="relative flex items-center">
             <Search className="w-4 h-4 text-[#8C877D] absolute left-3.5 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Ketik pertanyaan, misalnya: cara tambah barang, cetak laporan, atau kasbon mandor..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-24 py-3 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-semibold text-[#252922] focus:outline-none focus:border-[#234536] focus:bg-white transition"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-16 text-xs text-[#8C877D] hover:text-[#252922] font-bold"
-              >
-                Reset
-              </button>
-            )}
-            <button
-              onClick={() => {
-                const el = document.getElementById('quick-guides-section');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-              className="absolute right-2 px-4 py-1.5 bg-[#234536] hover:bg-[#1c372b] text-white rounded-control text-xs font-extrabold transition shadow-xs cursor-pointer"
-            >
-              Cari
-            </button>
+            <input type="text" aria-label="Cari bantuan" placeholder="Ketik pertanyaan, misalnya: tambah barang, laba rugi, atau kasbon mandor..." value={search} onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-20 py-3 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-semibold text-[#252922] focus:outline-none focus:border-[#234536] focus:bg-white transition" />
+            {search && <button onClick={() => setSearch('')} className="absolute right-3 text-xs text-[#8C877D] hover:text-[#252922] font-bold cursor-pointer">Reset</button>}
           </div>
         </div>
-
-        {/* Cute character & greeting illustration */}
         <div className="flex items-center gap-3 bg-[#F7F4ED] p-4 rounded-card border border-[#DEDCCF] md:max-w-xs shrink-0">
-          <div className="w-14 h-14 rounded-full bg-amber-100 border border-amber-300 flex items-center justify-center text-3xl shrink-0">
-            👷‍♂️
-          </div>
+          <WorkerAvatar size={56} helmet="#F4B400" />
           <div className="text-xs">
             <div className="font-extrabold text-[#252922]">Tim Bantuan StokMaterial.id</div>
-            <div className="text-[11px] text-[#625D53] mt-0.5 leading-snug">
-              Kami siap membantu Anda menggunakan sistem toko bangunan dengan lancar!
-            </div>
+            <div className="text-[11px] text-[#625D53] mt-0.5 leading-snug">Kami siap membantu Anda menggunakan sistem toko bangunan dengan lancar.</div>
           </div>
         </div>
       </div>
 
-      {/* 5 Quick Action Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {[
-          { icon: BookOpen, title: 'Panduan Penggunaan', desc: 'Langkah demi langkah sistem' },
-          { icon: Video, title: 'Video Tutorial', desc: 'Tonton video panduan fitur' },
-          { icon: FileQuestion, title: 'Pertanyaan Umum', desc: 'Jawaban pertanyaan umum' },
-          { icon: Headphones, title: 'Hubungi Kami', desc: 'Tim kami siap membantu' },
-          { icon: Info, title: 'Tentang Aplikasi', desc: 'Versi, lisensi & update' },
-        ].map((item, idx) => {
-          const Icon = item.icon;
-          return (
-            <div
-              key={idx}
-              className="p-3.5 bg-white rounded-card border border-[#DEDCCF] shadow-card hover:border-[#234536] hover:shadow-card-hover transition cursor-pointer flex flex-col justify-between h-28"
-            >
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-[#234536] flex items-center justify-center">
-                <Icon className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="font-extrabold text-xs text-[#252922]">{item.title}</div>
-                <div className="text-[10px] text-[#8C877D] mt-0.5 leading-tight">{item.desc}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Middle Section: Panduan Penggunaan & Video Tutorial */}
-      <div id="quick-guides-section" className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Panduan Penggunaan (6 cards) */}
-        <div className="lg:col-span-7 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-[#234536]" />
-              <h3 className="font-extrabold text-sm text-[#252922]">Panduan Penggunaan</h3>
-            </div>
-            <button className="text-xs font-bold text-[#234536] hover:underline">
-              Lihat Semua
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {guideCards
-              .filter((g) =>
-                searchQuery
-                  ? g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    g.desc.toLowerCase().includes(searchQuery.toLowerCase())
-                  : true
-              )
-              .map((g) => (
-                <div
-                  key={g.num}
-                  onClick={() => setSelectedGuide(g)}
-                  className="p-3.5 rounded-card bg-[#F7F4ED]/60 border border-[#DEDCCF] hover:bg-[#F7F4ED] hover:border-[#234536] transition cursor-pointer flex items-start gap-3"
-                >
-                  <div className="w-8 h-8 rounded-full bg-[#234536] text-white flex items-center justify-center text-xs font-black shrink-0">
-                    {g.num}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-extrabold text-xs text-[#252922] leading-tight">
-                      {g.title}
-                    </div>
-                    <div className="text-[11px] text-[#625D53] mt-1 leading-snug">
-                      {g.desc}
-                    </div>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-
-        {/* Video Tutorial Populer */}
-        <div className="lg:col-span-5 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-            <div className="flex items-center gap-2">
-              <Video className="w-4 h-4 text-[#234536]" />
-              <h3 className="font-extrabold text-sm text-[#252922]">Video Tutorial Populer</h3>
-            </div>
-            <button className="text-xs font-bold text-[#234536] hover:underline">
-              Lihat Semua
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            {videos
-              .filter((v) =>
-                searchQuery
-                  ? v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    v.desc.toLowerCase().includes(searchQuery.toLowerCase())
-                  : true
-              )
-              .map((vid, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => setActiveVideo(vid)}
-                  className="p-2.5 rounded-card bg-[#F7F4ED]/50 border border-[#DEDCCF] hover:bg-[#F7F4ED] transition cursor-pointer flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-stone-200 border border-[#DEDCCF] flex items-center justify-center text-[#234536] shrink-0 relative">
-                      <Play className="w-4 h-4 fill-current" />
-                    </div>
-                    <div>
-                      <div className="font-bold text-xs text-[#252922]">{vid.title}</div>
-                      <div className="text-[10px] text-[#625D53] mt-0.5">{vid.desc}</div>
-                    </div>
-                  </div>
-
-                  <div className="px-2 py-0.5 rounded bg-white border border-[#DEDCCF] text-[10px] font-bold text-[#625D53] shrink-0 font-mono">
-                    {vid.duration}
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Keyboard Shortcuts Cheat Sheet */}
-      <div className="bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-3">
-        <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-          <div className="flex items-center gap-2">
-            <span className="text-base">⌨️</span>
-            <div>
-              <h3 className="font-extrabold text-sm text-[#252922]">
-                Daftar Tombol Pintas Keyboard (Shortcuts)
-              </h3>
-              <p className="text-[11px] text-[#625D53]">
-                Akses cepat semua fungsi menu tanpa perlu menyentuh mouse.
-              </p>
-            </div>
-          </div>
-          <span className="text-xs text-[#234536] font-bold bg-[#F7F4ED] px-2.5 py-1 rounded-full border border-[#DEDCCF]">
-            12 Pintasan Aktif
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-1">
-          {shortcuts.map((sc) => (
-            <div
-              key={sc.key}
-              className="p-2.5 rounded-control bg-[#F7F4ED]/60 border border-[#DEDCCF] flex items-center justify-between gap-2 hover:bg-[#F7F4ED] transition"
-            >
-              <span className="text-xs text-[#252922] font-semibold truncate">
-                {sc.desc}
-              </span>
-              <kbd className="px-2 py-0.5 rounded bg-white border border-[#DEDCCF] text-xs font-mono font-black text-[#234536] shadow-2xs shrink-0">
-                {sc.key}
-              </kbd>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Bottom Section: Pertanyaan Umum (FAQ) & Hubungi Kami */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* FAQ Accordion */}
-        <div className="lg:col-span-7 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-            <div className="flex items-center gap-2">
-              <FileQuestion className="w-4 h-4 text-[#234536]" />
-              <h3 className="font-extrabold text-sm text-[#252922]">Pertanyaan Umum (FAQ)</h3>
-            </div>
-            <span className="text-xs text-[#8C877D] font-bold">5 Pertanyaan</span>
-          </div>
-
-          <div className="divide-y divide-[#DEDCCF]">
-            {faqs.map((faq, idx) => {
-              const isOpen = expandedFaq === idx;
+      {q.isLoading ? <div className={card}><LoadingRows /></div> : q.isError ? <div className={card}><ErrorBox error={q.error} onRetry={q.refetch} /></div> : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {quick.map((item) => {
+              const Icon = item.icon;
               return (
-                <div key={idx} className="py-2.5">
-                  <button
-                    onClick={() => setExpandedFaq(isOpen ? null : idx)}
-                    className="w-full flex items-center justify-between text-left text-xs font-bold text-[#252922] hover:text-[#234536] transition"
-                  >
-                    <span>{faq.q}</span>
-                    <ChevronRight
-                      className={`w-4 h-4 text-[#8C877D] transition-transform ${
-                        isOpen ? 'rotate-90 text-[#234536]' : ''
-                      }`}
-                    />
-                  </button>
-
-                  {isOpen && (
-                    <div className="mt-2 p-3 rounded-control bg-[#F7F4ED] text-[11px] text-[#625D53] leading-relaxed border border-[#DEDCCF]">
-                      {faq.a}
-                    </div>
-                  )}
-                </div>
+                <button key={item.to} onClick={() => scrollTo(item.to)} className="text-left p-3.5 bg-white rounded-card border border-[#DEDCCF] shadow-card hover:border-[#234536] transition cursor-pointer flex flex-col justify-between h-28">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-[#234536] flex items-center justify-center"><Icon className="w-4 h-4" /></div>
+                  <div>
+                    <div className="font-extrabold text-xs text-[#252922]">{item.title}</div>
+                    <div className="text-[10px] text-[#8C877D] mt-0.5 leading-tight">{item.desc}</div>
+                  </div>
+                </button>
               );
             })}
           </div>
-        </div>
 
-        {/* Hubungi Kami & Jam Layanan */}
-        <div className="lg:col-span-5 bg-white rounded-card border border-[#DEDCCF] p-5 shadow-card space-y-4">
-          <div className="pb-2 border-b border-[#DEDCCF]">
-            <h3 className="font-extrabold text-sm text-[#252922]">Hubungi Kami</h3>
-            <p className="text-xs text-[#625D53]">Masih ada pertanyaan? Tim kami siap membantu Anda.</p>
+          {nothing && <div className={card}><EmptyState icon={Search} title="Tidak ada hasil" desc={`Tidak ada bantuan yang cocok dengan "${search}". Coba kata kunci lain atau hubungi tim kami.`} /></div>}
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {(!term || guides.length > 0) && (
+              <div id="help-panduan" className={`scroll-mt-4 lg:col-span-7 ${card}`}>
+                <div className="flex items-center gap-2 pb-2 border-b border-[#DEDCCF]"><BookOpen className="w-4 h-4 text-[#234536]" /><h3 className="font-extrabold text-sm text-[#252922]">Panduan Penggunaan</h3></div>
+                {guides.length === 0 ? <EmptyState title="Belum ada panduan" /> : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {guides.map((g, i) => (
+                      <button key={g.id} onClick={() => setGuide(g)} className="text-left p-3.5 rounded-card bg-[#F7F4ED]/60 border border-[#DEDCCF] hover:bg-[#F7F4ED] hover:border-[#234536] transition cursor-pointer flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[#234536] text-white flex items-center justify-center text-xs font-black shrink-0">{String(i + 1).padStart(2, '0')}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-extrabold text-xs text-[#252922] leading-tight">{g.extra} {g.title}</div>
+                          <div className="text-[11px] text-[#625D53] mt-1 leading-snug">{splitGuide(g).summary}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(!term || videos.length > 0) && (
+              <div id="help-video" className={`scroll-mt-4 lg:col-span-5 ${card}`}>
+                <div className="flex items-center gap-2 pb-2 border-b border-[#DEDCCF]"><Video className="w-4 h-4 text-[#234536]" /><h3 className="font-extrabold text-sm text-[#252922]">Video Tutorial</h3></div>
+                {videos.length === 0 ? <EmptyState title="Belum ada video" /> : (
+                  <div className="space-y-2.5">
+                    {videos.map((v) => (
+                      <button key={v.id} onClick={() => setVideo(v)} className="w-full text-left p-2.5 rounded-card bg-[#F7F4ED]/50 border border-[#DEDCCF] hover:bg-[#F7F4ED] transition cursor-pointer flex items-center justify-between gap-3">
+                        <span className="flex items-center gap-3">
+                          <span className="w-10 h-10 rounded-lg bg-stone-200 border border-[#DEDCCF] flex items-center justify-center text-[#234536] shrink-0"><Play className="w-4 h-4 fill-current" /></span>
+                          <span><span className="block font-bold text-xs text-[#252922]">{v.title}</span><span className="block text-[10px] text-[#625D53] mt-0.5">{v.body}</span></span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-white border border-[#DEDCCF] text-[10px] font-bold text-[#625D53] shrink-0 font-mono">{v.extra}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center text-xs">
-            {/* WhatsApp */}
-            <div className="p-3 rounded-card bg-emerald-50/70 border border-emerald-200 flex flex-col justify-between h-28">
-              <div>
-                <MessageCircle className="w-5 h-5 text-[#16845B] mx-auto mb-1" />
-                <div className="font-extrabold text-[#252922]">WhatsApp</div>
-                <div className="text-[10px] text-[#625D53] font-mono mt-0.5">0812-3456-7890</div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {(!term || faqs.length > 0) && (
+              <div id="help-faq" className={`scroll-mt-4 lg:col-span-7 ${card} !space-y-3`}>
+                <div className="flex items-center gap-2 pb-2 border-b border-[#DEDCCF]"><FileQuestion className="w-4 h-4 text-[#234536]" /><h3 className="font-extrabold text-sm text-[#252922]">Pertanyaan yang Sering Diajukan</h3></div>
+                {faqs.length === 0 ? <EmptyState title="Belum ada pertanyaan umum" /> : faqs.map((f) => (
+                  <div key={f.id} className="border border-[#DEDCCF] rounded-control overflow-hidden">
+                    <button onClick={() => setOpenFaq(openFaq === f.id ? null : f.id)} aria-expanded={openFaq === f.id} className="w-full flex items-center justify-between gap-2 p-3 bg-[#F7F4ED]/50 hover:bg-[#F7F4ED] text-left text-xs font-bold text-[#252922] cursor-pointer">
+                      <span>{f.title}</span><ChevronRight className={`w-4 h-4 transition ${openFaq === f.id ? 'rotate-90' : ''}`} />
+                    </button>
+                    {(openFaq === f.id || !!term) && <div className="p-3 text-xs text-[#625D53] leading-relaxed border-t border-[#DEDCCF]">{f.body}</div>}
+                  </div>
+                ))}
               </div>
-              <button
-                onClick={() => window.open('https://wa.me/6281234567890', '_blank')}
-                className="w-full py-1 bg-[#16845B] hover:bg-emerald-700 text-white rounded text-[10px] font-bold"
-              >
-                Chat WA
-              </button>
-            </div>
+            )}
 
-            {/* Email */}
-            <div className="p-3 rounded-card bg-amber-50/70 border border-amber-200 flex flex-col justify-between h-28">
-              <div>
-                <Mail className="w-5 h-5 text-[#D97706] mx-auto mb-1" />
-                <div className="font-extrabold text-[#252922]">Email</div>
-                <div className="text-[10px] text-[#625D53] truncate mt-0.5">support@stok...</div>
-              </div>
-              <button
-                onClick={() => window.location.href = 'mailto:support@stokmaterial.id'}
-                className="w-full py-1 bg-[#C6A46A] hover:bg-[#ad8b53] text-white rounded text-[10px] font-bold"
-              >
-                Kirim Email
-              </button>
-            </div>
-
-            {/* Telepon */}
-            <div className="p-3 rounded-card bg-[#F7F4ED] border border-[#DEDCCF] flex flex-col justify-between h-28">
-              <div>
-                <Phone className="w-5 h-5 text-[#234536] mx-auto mb-1" />
-                <div className="font-extrabold text-[#252922]">Telepon</div>
-                <div className="text-[10px] text-[#625D53] font-mono mt-0.5">031-1234567</div>
-              </div>
-              <button
-                onClick={() => window.location.href = 'tel:0311234567'}
-                className="w-full py-1 bg-white border border-[#DEDCCF] hover:bg-stone-50 text-[#252922] rounded text-[10px] font-bold"
-              >
-                Hubungi
-              </button>
-            </div>
-          </div>
-
-          {/* Service Hours Notice */}
-          <div className="p-3 rounded-control bg-emerald-50/60 border border-emerald-200/80 flex items-center gap-2.5 text-xs text-[#234536]">
-            <Clock className="w-4 h-4 text-[#16845B] shrink-0" />
-            <div>
-              <div className="font-bold">Jam Layanan: Senin - Sabtu, 08.00 - 17.00 WIB</div>
-              <div className="text-[10px] text-[#625D53]">Respon rata-rata biasanya dalam 15 - 30 menit.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* Modal Baca Panduan Lengkap */}
-      {selectedGuide && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-card max-w-md w-full p-5 shadow-modal border border-[#DEDCCF] space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{selectedGuide.icon}</span>
-                <h3 className="font-extrabold text-sm text-[#252922]">{selectedGuide.title}</h3>
-              </div>
-              <button
-                onClick={() => setSelectedGuide(null)}
-                className="text-[#8C877D] hover:text-[#252922] transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="text-xs text-[#625D53] space-y-3 leading-relaxed">
-              <p className="font-medium text-[#252922]">{selectedGuide.desc}</p>
-              <div className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] space-y-2">
-                <div className="font-bold text-[#234536] flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#16845B]" />
-                  <span>Petunjuk Langkah Penggunaan:</span>
-                </div>
-                <ul className="list-disc list-inside space-y-1.5 text-[11px] text-[#252922]">
-                  <li>Buka menu terkait dari panel navigasi atau gunakan shortcut keyboard (F1 - F9).</li>
-                  <li>Lakukan pengisian formulir secara lengkap, pastikan kuantitas dan harga telah sesuai.</li>
-                  <li>Tekan tombol Simpan; data akan langsung disinkronkan ke basis data PostgreSQL secara permanen.</li>
-                  <li>Anda dapat mencetak bukti struk / faktur atau mengunduh laporan dalam format Excel (CSV).</li>
+            <div id="help-kontak" className={`scroll-mt-4 lg:col-span-5 ${card}`}>
+              <div className="flex items-center gap-2 pb-2 border-b border-[#DEDCCF]"><Headphones className="w-4 h-4 text-[#234536]" /><h3 className="font-extrabold text-sm text-[#252922]">Hubungi Kami</h3></div>
+              {contacts.length === 0 ? <EmptyState title="Kontak belum tersedia" /> : (
+                <ul className="space-y-2">
+                  {contacts.map((c) => {
+                    const Icon = CONTACT_ICON[c.extra] || Info;
+                    const href = CONTACT_HREF[c.extra]?.(c.body);
+                    const inner = (
+                      <>
+                        <span className="w-8 h-8 rounded-lg bg-emerald-50 text-[#234536] flex items-center justify-center shrink-0"><Icon className="w-4 h-4" /></span>
+                        <span><span className="block text-[10px] text-[#8C877D] font-bold">{c.title}</span><span className="block text-xs font-extrabold text-[#252922]">{c.body}</span></span>
+                      </>
+                    );
+                    return (
+                      <li key={c.id}>
+                        {href ? <a href={href} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-2.5 rounded-control bg-[#F7F4ED]/60 border border-[#DEDCCF] hover:border-[#234536] transition">{inner}</a>
+                          : <div className="flex items-center gap-3 p-2.5 rounded-control bg-emerald-50/60 border border-emerald-200/80">{inner}</div>}
+                      </li>
+                    );
+                  })}
                 </ul>
-              </div>
-            </div>
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedGuide(null)}
-                className="px-4 py-1.5 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold text-xs shadow-xs"
-              >
-                Tutup Panduan
-              </button>
+              )}
             </div>
           </div>
-        </div>
+
+          <div id="help-tentang" className="scroll-mt-4 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {(!term || shortcuts.length > 0) && (
+              <div className={`lg:col-span-7 ${card}`}>
+                <div className="flex items-center gap-2 pb-2 border-b border-[#DEDCCF]"><Keyboard className="w-4 h-4 text-[#234536]" /><h3 className="font-extrabold text-sm text-[#252922]">Pintasan Keyboard</h3></div>
+                {shortcuts.length === 0 ? <EmptyState title="Belum ada pintasan" /> : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {shortcuts.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-2 p-2.5 rounded-control bg-[#F7F4ED]/60 border border-[#DEDCCF] text-xs">
+                        <span className="text-[#625D53] font-semibold">{s.title}</span>
+                        <kbd className="px-2 py-0.5 rounded bg-white border border-[#DEDCCF] font-mono font-bold text-[#234536] text-[11px]">{s.body}</kbd>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className={`lg:col-span-5 ${card}`}>
+              <div className="flex items-center gap-2 pb-2 border-b border-[#DEDCCF]"><Info className="w-4 h-4 text-[#234536]" /><h3 className="font-extrabold text-sm text-[#252922]">Tentang Aplikasi</h3></div>
+              <dl className="divide-y divide-[#DEDCCF]/70 text-xs">
+                {about.map((a) => <div key={a.id} className="py-2 flex justify-between gap-3"><dt className="text-[#625D53]">{a.title}</dt><dd className="font-bold text-[#252922] text-right">{a.body}</dd></div>)}
+              </dl>
+            </div>
+          </div>
+        </>
       )}
 
-      {/* Modal Video Player Tutorial */}
-      {activeVideo && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-card max-w-md w-full p-5 shadow-modal border border-[#DEDCCF] space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[#DEDCCF]">
-              <div className="flex items-center gap-2">
-                <Video className="w-4 h-4 text-[#234536]" />
-                <h3 className="font-extrabold text-sm text-[#252922]">{activeVideo.title}</h3>
-              </div>
-              <button
-                onClick={() => setActiveVideo(null)}
-                className="text-[#8C877D] hover:text-[#252922] transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="aspect-video bg-stone-900 rounded-control flex flex-col items-center justify-center text-white p-4 relative overflow-hidden shadow-inner">
-              <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-xs border border-white/40 flex items-center justify-center text-white mb-2 animate-pulse">
-                <Play className="w-6 h-6 fill-current ml-0.5" />
-              </div>
-              <div className="font-bold text-xs">{activeVideo.title}</div>
-              <div className="text-[10px] text-stone-400 mt-1">
-                Durasi Video: {activeVideo.duration} • Kualitas Full HD 1080p
-              </div>
-            </div>
-            <p className="text-xs text-[#625D53]">{activeVideo.desc}</p>
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setActiveVideo(null)}
-                className="px-4 py-1.5 rounded-control bg-[#234536] hover:bg-[#1c372b] text-white font-extrabold text-xs shadow-xs"
-              >
-                Selesai Menonton
-              </button>
-            </div>
-          </div>
-        </div>
+      {guide && (
+        <Modal title={guide.title} subtitle={splitGuide(guide).summary} onClose={() => setGuide(null)}>
+          <ol className="list-decimal list-inside space-y-2 text-xs text-[#252922]">
+            {splitGuide(guide).steps.map((st) => <li key={st}>{st}</li>)}
+          </ol>
+          <div className="flex justify-end pt-4"><button onClick={() => setGuide(null)} className={btnPrimary}>Tutup Panduan</button></div>
+        </Modal>
+      )}
+      {video && (
+        <Modal title={video.title} subtitle={`Durasi ${video.extra}`} onClose={() => setVideo(null)}>
+          <p className="text-xs text-[#625D53]">{video.body}</p>
+          <p className="text-[11px] text-[#8C877D] mt-3">Video belum diunggah ke server ini. Ikuti langkah terkait di bagian Panduan Penggunaan.</p>
+          <div className="flex justify-end pt-4"><button onClick={() => { setVideo(null); scrollTo('help-panduan'); }} className={btnPrimary}>Lihat Panduan</button></div>
+        </Modal>
       )}
     </div>
   );

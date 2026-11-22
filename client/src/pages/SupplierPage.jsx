@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { parseCsv, pick } from '../utils/csv.js';
 import api from '../services/api.js';
-import { formatRupiah } from '../utils/formatters.js';
+import { formatRupiah, formatDateOnly } from '../utils/formatters.js';
+import { EmptyState } from '../components/ui/common.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Toast from '../components/Toast.jsx';
@@ -27,6 +29,8 @@ export default function SupplierPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [cityFilter, setCityFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [drawerTab, setDrawerTab] = useState('info'); // 'info' | 'contact' | 'address' | 'history'
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -43,28 +47,48 @@ export default function SupplierPage() {
   const importFileRef = React.useRef(null);
   const handleImportCsv = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const text = evt.target.result;
-        const lines = text.split(/\r?\n/).filter(Boolean);
-        showToast('success', `Berhasil membaca file ${file.name} (${lines.length - 1} baris supplier). Data siap disinkronkan!`);
-      } catch {
-        showToast('error', 'Gagal memproses file CSV import.');
+    reader.onload = async (evt) => {
+      const rows = parseCsv(evt.target.result);
+      if (rows.length === 0) {
+        showToast('error', 'File kosong atau format salah. Gunakan baris pertama sebagai judul kolom.');
+        return;
       }
+      let ok = 0;
+      let firstErr = '';
+      for (const r of rows) {
+        const term = pick(r, 'termin', 'paymentTerms', 'tempo');
+        try {
+          await api.post('/suppliers', {
+            name: pick(r, 'nama', 'name', 'supplier'),
+            category: pick(r, 'kategori', 'category'),
+            contactPerson: pick(r, 'kontak', 'pic', 'contactPerson'),
+            phone: pick(r, 'telepon', 'phone', 'wa', 'telp'),
+            email: pick(r, 'email'),
+            address: pick(r, 'alamat', 'address'),
+            paymentTerms: term ? (/^\d+$/.test(term) ? `Tempo ${term} Hari` : term) : undefined,
+          });
+          ok++;
+        } catch (err) {
+          if (!firstErr) firstErr = err.response?.data?.message || 'Gagal menyimpan baris.';
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      const fail = rows.length - ok;
+      showToast(fail ? 'error' : 'success', `Impor selesai: ${ok} supplier tersimpan${fail ? `, ${fail} gagal (${firstErr})` : ''}.`);
     };
     reader.readAsText(file);
-    e.target.value = '';
   };
 
   // New Supplier form state
   const [supName, setSupName] = useState('');
   const [supPic, setSupPic] = useState('');
   const [supPhone, setSupPhone] = useState('');
-  const [supCity, setSupCity] = useState('Gresik');
-  const [supCategory, setSupCategory] = useState('Semen & Mortar');
-  const [supNpwp, setSupNpwp] = useState('');
+  const [supAddress, setSupAddress] = useState('');
+  const [supCategory, setSupCategory] = useState('');
+  const [supEmail, setSupEmail] = useState('');
   const [supTerm, setSupTerm] = useState('30');
 
   // Supplier List Data matching design mockup
@@ -81,19 +105,18 @@ export default function SupplierPage() {
     id: s.id,
     code: s.code || `SI-${String(idx + 1).padStart(3, '0')}`,
     name: s.name,
-    pic: s.contactPerson || 'Kontak Supplier',
+    pic: s.contactPerson || '-',
     phone: s.phone || '-',
-    city: s.address?.split(',')?.[1]?.trim() || 'Gresik',
+    city: s.address?.split(',')?.[1]?.trim() || '-',
     category: s.category || 'Umum',
     status: (s.status || 'Aktif').toLowerCase(),
-    totalPurchases: 0,
-    trxCount: 0,
-    lastTrxDate: 'Belum tersedia',
-    lastTrxAmount: 0,
-    npwp: 'Belum tersedia',
     termDays: parseInt(s.paymentTerms?.match(/\d+/)?.[0] || '30', 10),
     address: s.address || '-',
     email: s.email || '-',
+    purchaseCount: s.purchaseCount || 0,
+    purchaseTotal: s.purchaseTotal || 0,
+    unpaidTotal: s.unpaidTotal || 0,
+    lastPurchaseDate: s.lastPurchaseDate || null,
   }));
 
   // Create Supplier Mutation
@@ -107,7 +130,9 @@ export default function SupplierPage() {
       setSupName('');
       setSupPic('');
       setSupPhone('');
-      setSupNpwp('');
+      setSupEmail('');
+      setSupAddress('');
+      setSupCategory('');
       showToast('success', 'Data supplier baru berhasil didaftarkan secara permanen!');
     },
     onError: (err) => {
@@ -139,7 +164,8 @@ export default function SupplierPage() {
       category: supCategory,
       contactPerson: supPic,
       phone: supPhone,
-      address: `Jl. Industri, ${supCity}`,
+      address: supAddress,
+      email: supEmail,
       paymentTerms: `Tempo ${supTerm} Hari`,
     });
   };
@@ -165,6 +191,9 @@ export default function SupplierPage() {
     }
     return true;
   });
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const curPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice((curPage - 1) * PAGE_SIZE, curPage * PAGE_SIZE);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
@@ -226,43 +255,12 @@ export default function SupplierPage() {
         </div>
       </div>
 
-      {/* 4 Stat Cards */}
+      {/* 4 Stat Cards (dihitung dari data supplier yang tersimpan) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-3.5 sm:gap-4">
-        <StatCard
-          icon={Building2}
-          iconBg="bg-emerald-50 text-[#16845B]"
-          title="Total Supplier"
-          value={`${suppliers.length} Supplier`}
-          subtitle="Data mitra tersimpan"
-          trendType="up"
-        />
-
-        <StatCard
-          icon={CheckCircle2}
-          iconBg="bg-amber-50 text-[#D97706]"
-          title="Supplier Aktif"
-          value={`${suppliers.filter((s) => s.status === 'aktif').length} Supplier`}
-          subtitle="Status aktif"
-          trendType="up"
-        />
-
-        <StatCard
-          icon={Ban}
-          iconBg="bg-rose-50 text-[#C62828]"
-          title="Supplier Non-aktif"
-          value={`${suppliers.filter((s) => s.status !== 'aktif').length} Supplier`}
-          subtitle="Tidak ada perubahan"
-          trendType="neutral"
-        />
-
-        <StatCard
-          icon={DollarSign}
-          iconBg="bg-emerald-50 text-[#16845B]"
-          title="Total Pembelian"
-          value="Belum tersedia"
-          subtitle="Pencatatan pembelian belum tersedia"
-          trendType="up"
-        />
+        <StatCard icon={Building2} iconBg="bg-emerald-50 text-[#16845B]" title="Total Supplier" value={`${suppliers.length} Supplier`} subtitle="Terdaftar di sistem" />
+        <StatCard icon={CheckCircle2} iconBg="bg-amber-50 text-[#D97706]" title="Supplier Aktif" value={`${suppliers.filter((x) => x.status === 'aktif').length} Supplier`} subtitle={`${suppliers.length ? Math.round((suppliers.filter((x) => x.status === 'aktif').length / suppliers.length) * 100) : 0}% dari total`} />
+        <StatCard icon={Ban} iconBg="bg-rose-50 text-[#C62828]" title="Supplier Non-aktif" value={`${suppliers.filter((x) => x.status !== 'aktif').length} Supplier`} subtitle="Status non-aktif" />
+        <StatCard icon={DollarSign} iconBg="bg-amber-50 text-[#D97706]" title="Hutang ke Supplier" value={formatRupiah(suppliers.reduce((a, x) => a + x.unpaidTotal, 0))} subtitle={`Total pembelian ${formatRupiah(suppliers.reduce((a, x) => a + x.purchaseTotal, 0))}`} />
       </div>
 
       {/* Filter and Search Bar */}
@@ -295,15 +293,9 @@ export default function SupplierPage() {
             className="px-3 py-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control text-xs font-bold text-[#252922] focus:outline-none focus:border-[#234536]"
           >
             <option value="all">Semua Kota</option>
-            <option value="Gresik">Gresik</option>
-            <option value="Jakarta">Jakarta</option>
-            <option value="Bandung">Bandung</option>
-            <option value="Surabaya">Surabaya</option>
-            <option value="Yogyakarta">Yogyakarta</option>
-            <option value="Tangerang">Tangerang</option>
-            <option value="Semarang">Semarang</option>
-            <option value="Malang">Malang</option>
-            <option value="Cilegon">Cilegon</option>
+            {[...new Set(suppliers.map((x) => x.city).filter((c) => c && c !== '-'))].sort().map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
           </select>
 
           <button
@@ -332,12 +324,12 @@ export default function SupplierPage() {
                   <th className="py-3 px-3">KOTA</th>
                   <th className="py-3 px-3">KATEGORI UTAMA</th>
                   <th className="py-3 px-3 text-center">STATUS</th>
-                  <th className="py-3 px-3 text-right">TOTAL PEMBELIAN</th>
+                  <th className="py-3 px-3 text-right">TERMIN BAYAR</th>
                   <th className="py-3 px-3 text-center">AKSI</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#DEDCCF]/70">
-                {filtered.map((s, idx) => {
+                {pageRows.map((s, idx) => {
                   const isSelected = selectedSupplier?.id === s.id;
                   return (
                     <tr
@@ -347,7 +339,7 @@ export default function SupplierPage() {
                         isSelected ? 'bg-emerald-50/60' : 'hover:bg-[#F7F4ED]/50'
                       }`}
                     >
-                      <td className="py-3 px-3 text-[#8C877D] font-medium">{idx + 1}</td>
+                      <td className="py-3 px-3 text-[#8C877D] font-medium">{(curPage - 1) * PAGE_SIZE + idx + 1}</td>
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-lg bg-red-50 border border-red-200 flex items-center justify-center font-black text-red-700 text-xs shrink-0">
@@ -369,7 +361,8 @@ export default function SupplierPage() {
                         <StatusBadge status={s.status} />
                       </td>
                       <td className="py-3 px-3 text-right font-black text-[#252922]">
-                        {'Belum tersedia'}
+                        {s.termDays} hari
+                        <div className="text-[10px] font-semibold text-[#8C877D]">{s.purchaseCount}x • {formatRupiah(s.purchaseTotal)}</div>
                       </td>
                       <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
@@ -398,13 +391,32 @@ export default function SupplierPage() {
 
           <div className="p-3 border-t border-[#DEDCCF] bg-[#F7F4ED]/50 flex items-center justify-between text-xs text-[#625D53]">
             <div>
-              Tampilkan <span className="font-bold">{filtered.length}</span> supplier
+              Menampilkan <span className="font-bold">{pageRows.length}</span> dari <span className="font-bold">{filtered.length}</span> supplier
             </div>
             <div className="flex items-center gap-1">
-              <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&lt;</button>
-              <button className="px-2.5 py-1 rounded bg-[#234536] text-white font-bold">1</button>
-              <button className="px-2.5 py-1 rounded border border-[#DEDCCF] bg-white font-bold">2</button>
-              <button className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold">&gt;</button>
+              <button
+                disabled={curPage <= 1}
+                onClick={() => setPage(curPage - 1)}
+                className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold disabled:opacity-40"
+              >
+                &lt;
+              </button>
+              {Array.from({ length: pageCount }, (_, k) => k + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPage(n)}
+                  className={`px-2.5 py-1 rounded font-bold ${n === curPage ? 'bg-[#234536] text-white' : 'border border-[#DEDCCF] bg-white'}`}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                disabled={curPage >= pageCount}
+                onClick={() => setPage(curPage + 1)}
+                className="px-2 py-1 rounded border border-[#DEDCCF] bg-white font-bold disabled:opacity-40"
+              >
+                &gt;
+              </button>
             </div>
           </div>
         </div>
@@ -465,49 +477,41 @@ export default function SupplierPage() {
 
               {/* Information Body */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
-                <div className="bg-[#F7F4ED] rounded-control p-3.5 space-y-2 border border-[#DEDCCF]">
-                  <div className="flex justify-between">
-                    <span className="text-[#625D53]">Nama Supplier</span>
-                    <span className="font-bold text-[#252922]">{selectedSupplier.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#625D53]">Kategori Utama</span>
-                    <span className="font-bold text-[#252922]">{selectedSupplier.category}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#625D53]">NPWP</span>
-                    <span className="font-bold text-[#252922]">{selectedSupplier.npwp}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#625D53]">Termin Pembayaran</span>
-                    <span className="font-bold text-[#252922]">{selectedSupplier.termDays} Hari</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#625D53]">Status Kemitraan</span>
-                    <StatusBadge status={selectedSupplier.status} size="xs" />
-                  </div>
-                </div>
-
-                {/* KPI Boxes */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-emerald-50 rounded-control border border-emerald-200">
-                    <div className="text-[10px] text-[#16845B] font-bold">Total Pembelian</div>
-                    <div className="text-sm font-black text-[#16845B] mt-0.5">
-                      {'Belum tersedia'}
+                {drawerTab === 'info' && (
+                  <>
+                    <div className="bg-[#F7F4ED] rounded-control p-3.5 space-y-2 border border-[#DEDCCF]">
+                      <div className="flex justify-between"><span className="text-[#625D53]">Nama Supplier</span><span className="font-bold text-[#252922]">{selectedSupplier.name}</span></div>
+                      <div className="flex justify-between"><span className="text-[#625D53]">Kategori Utama</span><span className="font-bold text-[#252922]">{selectedSupplier.category}</span></div>
+                      <div className="flex justify-between"><span className="text-[#625D53]">Termin Pembayaran</span><span className="font-bold text-[#252922]">{selectedSupplier.termDays} Hari</span></div>
+                      <div className="flex justify-between"><span className="text-[#625D53]">Status Kemitraan</span><StatusBadge status={selectedSupplier.status} size="xs" /></div>
                     </div>
-                    <div className="text-[10px] text-[#625D53] mt-0.5">({selectedSupplier.trxCount} transaksi)</div>
-                  </div>
-
-                  <div className="p-3 bg-amber-50 rounded-control border border-amber-200">
-                    <div className="text-[10px] text-[#D97706] font-bold">Transaksi Terakhir</div>
-                    <div className="text-xs font-extrabold text-[#D97706] mt-0.5">
-                      {selectedSupplier.lastTrxDate}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-3 bg-emerald-50 rounded-control border border-emerald-200">
+                        <div className="text-[10px] text-[#16845B] font-bold">Total Pembelian</div>
+                        <div className="text-sm font-black text-[#16845B] mt-0.5">{formatRupiah(selectedSupplier.purchaseTotal)}</div>
+                        <div className="text-[10px] text-[#625D53] mt-0.5">{selectedSupplier.purchaseCount} faktur{selectedSupplier.lastPurchaseDate ? ` • terakhir ${formatDateOnly(selectedSupplier.lastPurchaseDate)}` : ''}</div>
+                      </div>
+                      <div className="p-3 bg-amber-50 rounded-control border border-amber-200">
+                        <div className="text-[10px] text-[#B45309] font-bold">Hutang Belum Lunas</div>
+                        <div className="text-sm font-black text-[#B45309] mt-0.5">{formatRupiah(selectedSupplier.unpaidTotal)}</div>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-[#625D53] mt-0.5">
-                      {formatRupiah(selectedSupplier.lastTrxAmount)}
-                    </div>
+                  </>
+                )}
+                {drawerTab === 'contact' && (
+                  <div className="bg-[#F7F4ED] rounded-control p-3.5 space-y-2 border border-[#DEDCCF]">
+                    <div className="flex justify-between"><span className="text-[#625D53]">Kontak Person</span><span className="font-bold text-[#252922]">{selectedSupplier.pic}</span></div>
+                    <div className="flex justify-between"><span className="text-[#625D53]">Telepon</span><span className="font-bold font-mono text-[#252922]">{selectedSupplier.phone}</span></div>
+                    <div className="flex justify-between"><span className="text-[#625D53]">Email</span><span className="font-bold text-[#252922]">{selectedSupplier.email}</span></div>
                   </div>
-                </div>
+                )}
+                {drawerTab === 'address' && (
+                  <div className="bg-[#F7F4ED] rounded-control p-3.5 space-y-2 border border-[#DEDCCF]">
+                    <div className="text-[#625D53]">Alamat Lengkap</div>
+                    <div className="font-bold text-[#252922] leading-relaxed">{selectedSupplier.address}</div>
+                  </div>
+                )}
+                {drawerTab === 'history' && <SupplierHistory supplierId={selectedSupplier.id} />}
               </div>
 
               {/* Drawer Footer Actions */}
@@ -644,40 +648,41 @@ export default function SupplierPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-[#252922] block mb-1">Kota Asal</label>
+                  <label className="font-bold text-[#252922] block mb-1">Alamat</label>
                   <input
                     type="text"
-                    value={supCity}
-                    onChange={(e) => setSupCity(e.target.value)}
+                    value={supAddress}
+                    onChange={(e) => setSupAddress(e.target.value)}
                     className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
                   />
                 </div>
                 <div>
                   <label className="font-bold text-[#252922] block mb-1">Kategori Utama</label>
-                  <select
+                  <input
+                    type="text"
+                    list="supplier-categories"
+                    required
+                    placeholder="mis. Semen & Mortar"
                     value={supCategory}
                     onChange={(e) => setSupCategory(e.target.value)}
                     className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control font-bold"
-                  >
-                    <option value="Semen & Mortar">Semen & Mortar</option>
-                    <option value="Besi & Baja">Besi & Baja</option>
-                    <option value="Bata & Hebel">Bata & Hebel</option>
-                    <option value="Cat & Pelapis">Cat & Pelapis</option>
-                    <option value="Pipa & Sanitasi">Pipa & Sanitasi</option>
-                    <option value="Kayu & Triplek">Kayu & Triplek</option>
-                    <option value="Alat & Perkakas">Alat & Perkakas</option>
-                  </select>
+                  />
+                  <datalist id="supplier-categories">
+                    {[...new Set(suppliers.map((x) => x.category).filter((c) => c && c !== 'Umum'))].map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold text-[#252922] block mb-1">NPWP (Opsional)</label>
+                  <label className="font-bold text-[#252922] block mb-1">Email (Opsional)</label>
                   <input
-                    type="text"
-                    placeholder="01.234.567.8-901.000"
-                    value={supNpwp}
-                    onChange={(e) => setSupNpwp(e.target.value)}
+                    type="email"
+                    placeholder="sales@supplier.co.id"
+                    value={supEmail}
+                    onChange={(e) => setSupEmail(e.target.value)}
                     className="w-full p-2 bg-[#F7F4ED] border border-[#DEDCCF] rounded-control"
                   />
                 </div>
@@ -716,5 +721,28 @@ export default function SupplierPage() {
       <Toast toast={toast} onClose={() => setToast({ show: false, type: 'info', message: '' })} />
       <input ref={importFileRef} type="file" accept=".csv" onChange={handleImportCsv} className="hidden" />
     </div>
+  );
+}
+
+
+function SupplierHistory({ supplierId }) {
+  const q = useQuery({
+    queryKey: ['purchases', 'supplier', supplierId],
+    queryFn: async () => (await api.get('/purchases', { params: { supplierId, limit: 50 } })).data.data,
+  });
+  if (q.isLoading) return <p className="text-[#8C877D] font-semibold">Memuat riwayat...</p>;
+  if (q.isError) return <p className="text-rose-600 font-semibold">Gagal memuat riwayat pembelian.</p>;
+  const rows = q.data || [];
+  if (rows.length === 0) return <EmptyState title="Belum ada pembelian" desc="Pembelian dari supplier ini akan muncul setelah dicatat di Inventori > Barang Masuk." />;
+  return (
+    <ul className="space-y-2">
+      {rows.map((p) => (
+        <li key={p.id} className="p-3 bg-[#F7F4ED] rounded-control border border-[#DEDCCF] space-y-1">
+          <div className="flex justify-between font-bold text-[#252922]"><span className="font-mono text-[#234536]">{p.number}</span><span>{formatRupiah(p.totalAmount)}</span></div>
+          <div className="flex justify-between text-[11px] text-[#625D53]"><span>{formatDateOnly(p.purchaseDate)}</span><span className={p.paymentStatus === 'LUNAS' ? 'text-[#16845B] font-bold' : 'text-[#B45309] font-bold'}>{p.paymentStatus === 'LUNAS' ? 'Lunas' : 'Hutang'}</span></div>
+          <div className="text-[11px] text-[#8C877D]">{(p.items || []).map((i) => `${i.productName} (${Number(i.qty)} ${i.unitName})`).join(', ')}</div>
+        </li>
+      ))}
+    </ul>
   );
 }
