@@ -1,41 +1,62 @@
 import { create } from 'zustand';
+import { calcTotals, roundRp, pickUnitPrice } from '../utils/calc.js';
+
+// Harga satuan efektif: harga normal, atau harga grosir bertingkat bila qty memenuhi syarat (sama dengan server).
+const resolvePrice = (sellPrice, wholesale, unitId, qty, on) => {
+  const tiers = on ? (wholesale || []).filter((w) => w.unitId === unitId) : [];
+  const { price, tier } = pickUnitPrice(parseFloat(sellPrice) || 0, tiers, qty);
+  return { price, tier };
+};
+
+const priced = (item, on) => {
+  const { price, tier } = resolvePrice(item.basePrice, item.wholesale, item.unitId, item.qty, on);
+  return {
+    ...item,
+    unitPrice: price,
+    tierLabel: tier ? tier.label : null,
+    qtyBaseUnit: item.qty * item.conversionFactor,
+    subtotal: roundRp(item.qty * price),
+  };
+};
 
 export const useCartStore = create((set, get) => ({
   items: [],
   selectedCustomer: null,
   discount: 0,
   notes: '',
+  wholesaleOn: true,
+
+  setWholesaleOn: (on) => set((s) => ({ wholesaleOn: !!on, items: s.items.map((i) => priced(i, !!on)) })),
 
   addItem: (product, unit) => {
     const items = [...get().items];
-    const existingIndex = items.findIndex(
-      (item) => item.productId === product.id && item.unitId === unit.id
-    );
-
-    const unitPrice = parseFloat(unit.sellPrice) || 0;
+    const on = get().wholesaleOn;
+    const existingIndex = items.findIndex((item) => item.productId === product.id && item.unitId === unit.id);
 
     if (existingIndex > -1) {
-      items[existingIndex].qty += 1;
-      items[existingIndex].subtotal = items[existingIndex].qty * items[existingIndex].unitPrice;
-      items[existingIndex].qtyBaseUnit = items[existingIndex].qty * items[existingIndex].conversionFactor;
+      items[existingIndex] = priced({ ...items[existingIndex], qty: items[existingIndex].qty + 1 }, on);
     } else {
       const conversionFactor = parseFloat(unit.conversionFactor) || 1;
-      items.push({
-        productId: product.id,
-        productName: product.name,
-        sku: product.sku,
-        baseUnit: product.baseUnit,
-        currentStockBase: product.currentStockBase,
-        unitId: unit.id,
-        unitName: unit.unitName,
-        conversionFactor,
-        unitPrice,
-        qty: 1,
-        qtyBaseUnit: conversionFactor,
-        subtotal: unitPrice,
-        level: unit.level,
-        availableUnits: product.units || [],
-      });
+      items.push(
+        priced(
+          {
+            productId: product.id,
+            productName: product.name,
+            sku: product.sku,
+            baseUnit: product.baseUnit,
+            currentStockBase: product.currentStockBase,
+            unitId: unit.id,
+            unitName: unit.unitName,
+            conversionFactor,
+            basePrice: parseFloat(unit.sellPrice) || 0,
+            wholesale: product.wholesale || [],
+            qty: 1,
+            level: unit.level,
+            availableUnits: product.units || [],
+          },
+          on,
+        ),
+      );
     }
 
     set({ items });
@@ -47,49 +68,37 @@ export const useCartStore = create((set, get) => ({
       get().removeItem(productId, unitId);
       return;
     }
-
-    const items = get().items.map((item) => {
-      if (item.productId === productId && item.unitId === unitId) {
-        return {
-          ...item,
-          qty,
-          qtyBaseUnit: qty * item.conversionFactor,
-          subtotal: qty * item.unitPrice,
-        };
-      }
-      return item;
+    const on = get().wholesaleOn;
+    set({
+      items: get().items.map((item) =>
+        item.productId === productId && item.unitId === unitId ? priced({ ...item, qty }, on) : item,
+      ),
     });
-
-    set({ items });
   },
 
   switchUnit: (productId, currentUnitId, targetUnit) => {
-    const items = get().items.map((item) => {
-      if (item.productId === productId && item.unitId === currentUnitId) {
-        const conversionFactor = parseFloat(targetUnit.conversionFactor) || 1;
-        const unitPrice = parseFloat(targetUnit.sellPrice) || 0;
-        return {
-          ...item,
-          unitId: targetUnit.id,
-          unitName: targetUnit.unitName,
-          conversionFactor,
-          unitPrice,
-          level: targetUnit.level,
-          qtyBaseUnit: item.qty * conversionFactor,
-          subtotal: item.qty * unitPrice,
-        };
-      }
-      return item;
+    const on = get().wholesaleOn;
+    set({
+      items: get().items.map((item) =>
+        item.productId === productId && item.unitId === currentUnitId
+          ? priced(
+              {
+                ...item,
+                unitId: targetUnit.id,
+                unitName: targetUnit.unitName,
+                conversionFactor: parseFloat(targetUnit.conversionFactor) || 1,
+                basePrice: parseFloat(targetUnit.sellPrice) || 0,
+                level: targetUnit.level,
+              },
+              on,
+            )
+          : item,
+      ),
     });
-
-    set({ items });
   },
 
   removeItem: (productId, unitId) => {
-    const items = get().items.filter(
-      (item) => !(item.productId === productId && item.unitId === unitId)
-    );
-    set({ items });
+    set({ items: get().items.filter((item) => !(item.productId === productId && item.unitId === unitId)) });
   },
 
   setCustomer: (customer) => {
@@ -108,15 +117,19 @@ export const useCartStore = create((set, get) => ({
     set({ items: [], selectedCustomer: null, discount: 0, notes: '' });
   },
 
-  getSubtotal: () => {
-    return get().items.reduce((sum, item) => sum + (item.subtotal || 0), 0);
+  // Semua angka uang dihitung lewat calcTotals (rumus sama dengan server).
+  getTotals: (taxRate = 0) => {
+    const { items, discount } = get();
+    return calcTotals({
+      items: items.map((i) => ({ qty: i.qty, unitPrice: i.unitPrice })),
+      discountPercent: discount || 0,
+      taxRate,
+    });
   },
 
-  getTotal: () => {
-    const subtotal = get().getSubtotal();
-    const discount = get().discount || 0;
-    return Math.max(0, subtotal - discount);
-  },
+  getSubtotal: () => get().getTotals(0).subtotal,
+
+  getTotal: (taxRate = 0) => get().getTotals(taxRate).total,
 
   getItemCount: () => {
     return get().items.reduce((count, item) => count + (item.qty || 0), 0);
