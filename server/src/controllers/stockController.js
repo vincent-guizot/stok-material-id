@@ -1,343 +1,196 @@
-import { sequelize, Product, ProductUnit, StockMovement } from '../models/index.js';
+import { Op } from 'sequelize';
+import { sequelize, Product, ProductUnit, StockMovement, Setting, User } from '../models/index.js';
+import { roundStock } from '../utils/money.js';
+import { nextDocNumber, jakartaDate } from '../utils/docNumber.js';
 
-export const addStock = async (req, res, next) => {
-  let t;
+class StockError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+const fail = (res, e) => res.status(e.status || 500).json({ success: false, message: e.message });
+
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+};
+
+// Ambil produk (dikunci) + satuan yang dipakai pengguna.
+async function loadProductUnit(t, productId, unitId) {
+  const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
+  if (!product) throw new StockError(404, 'Produk material tidak ditemukan.');
+  let factor = 1;
+  let unitName = product.baseUnit;
+  if (unitId) {
+    const unit = await ProductUnit.findByPk(unitId, { transaction: t });
+    if (!unit || unit.productId !== product.id) throw new StockError(400, `Satuan tidak valid untuk produk "${product.name}".`);
+    factor = parseFloat(unit.conversionFactor) || 1;
+    unitName = unit.unitName;
+  }
+  return { product, factor, unitName };
+}
+
+const withTx = (fn) => async (req, res, next) => {
+  const t = await sequelize.transaction();
   try {
-    t = await sequelize.transaction();
-    if (Array.isArray(req.body.items)) {
-      if (!req.body.items.length) { await t.rollback(); return res.status(400).json({ success: false, message: 'Daftar barang masuk kosong.' }); }
-      const entries = [];
-      for (const item of [...req.body.items].sort((a, b) => String(a.productId).localeCompare(String(b.productId)))) {
-        if (!item.productId || !Number.isFinite(Number(item.qty)) || Number(item.qty) <= 0) {
-          await t.rollback();
-          return res.status(400).json({ success: false, message: 'Produk dan qty positif wajib diisi.' });
-        }
-        const product = await Product.findByPk(item.productId, { transaction: t, lock: t.LOCK.UPDATE });
-        if (!product) { await t.rollback(); return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' }); }
-        const unit = item.unitId ? await ProductUnit.findByPk(item.unitId, { transaction: t }) : null;
-        if (item.unitId && (!unit || unit.productId !== product.id)) { await t.rollback(); return res.status(400).json({ success: false, message: 'Satuan tidak sesuai produk.' }); }
-        const qtyBaseUnit = Number(item.qty) * Number(unit?.conversionFactor || 1);
-        const previousStock = product.currentStockBase;
-        const newStock = previousStock + qtyBaseUnit;
-        await product.update({ currentStockBase: newStock }, { transaction: t });
-        const movement = await StockMovement.create({ productId: product.id, type: 'IN', qtyBaseUnit,
-          previousStock, newStock, notes: req.body.notes || 'Penerimaan beberapa material', createdBy: req.user.id }, { transaction: t });
-        entries.push({ product, movement });
-      }
-      await t.commit();
-      return res.status(201).json({ success: true, data: { entries } });
-    }
-    const { productId, unitId, qty, notes } = req.body;
-
-    if (!productId || !qty) {
-      await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Produk dan kuantitas barang masuk wajib diisi.',
-      });
-    }
-
-    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!product) {
-      await t.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Produk material tidak ditemukan.',
-      });
-    }
-
-    let conversionFactor = 1;
-    let unitName = product.baseUnit;
-
-    if (unitId) {
-      const unit = await ProductUnit.findByPk(unitId, { transaction: t, lock: t.LOCK.UPDATE });
-      if (!unit || unit.productId !== product.id) {
-        await t.rollback();
-        return res.status(400).json({ success: false, message: 'Satuan tidak valid untuk produk ini.' });
-      }
-      if (unit) {
-        conversionFactor = parseFloat(unit.conversionFactor);
-        unitName = unit.unitName;
-      }
-    }
-
-    const numQty = parseFloat(qty);
-    const addedBaseQty = numQty * conversionFactor;
-    const prevStock = product.currentStockBase;
-    const newStock = prevStock + addedBaseQty;
-
-    await product.update({ currentStockBase: newStock }, { transaction: t, lock: t.LOCK.UPDATE });
-
-    const movement = await StockMovement.create(
-      {
-        productId: product.id,
-        type: 'IN',
-        qtyBaseUnit: addedBaseQty,
-        previousStock: prevStock,
-        newStock: newStock,
-        notes: notes || `Penerimaan Barang Masuk: ${numQty} ${unitName}`,
-        createdBy: req.user ? req.user.id : null,
-      },
-      { transaction: t, lock: t.LOCK.UPDATE }
-    );
-
+    const out = await fn(req, t);
     await t.commit();
-
-    res.status(201).json({
-      success: true,
-      message: `Stok "${product.name}" berhasil ditambah sebanyak ${numQty} ${unitName} (= +${addedBaseQty} ${product.baseUnit}). Total stok baru: ${newStock} ${product.baseUnit}.`,
-      data: {
-        product,
-        movement,
-      },
-    });
+    res.status(out.status || 201).json({ success: true, message: out.message, data: out.data });
   } catch (err) {
-    if (t && !t.finished) await t.rollback();
+    await t.rollback();
+    if (err instanceof StockError) return fail(res, err);
     next(err);
   }
 };
 
-export const outStock = async (req, res, next) => {
-  let t;
-  try {
-    t = await sequelize.transaction();
-    const { productId, unitId, qty, destination, receiver, driver, notes } = req.body;
+// Barang masuk tanpa dokumen pembelian (mis. koreksi). Pembelian dari supplier memakai POST /purchases.
+export const addStock = withTx(async (req, t) => {
+  const { productId, unitId, qty, notes } = req.body;
+  const q = num(qty);
+  if (!productId || !(q > 0)) throw new StockError(400, 'Produk dan kuantitas barang masuk wajib diisi (lebih dari 0).');
+  const { product, factor, unitName } = await loadProductUnit(t, productId, unitId);
+  const added = roundStock(q * factor);
+  const prev = parseFloat(product.currentStockBase) || 0;
+  const next = roundStock(prev + added);
+  await product.update({ currentStockBase: next }, { transaction: t });
+  const movement = await StockMovement.create(
+    {
+      productId: product.id, type: 'IN', qtyBaseUnit: added, previousStock: prev, newStock: next,
+      unitName, qtyInput: q, notes: notes || `Penerimaan barang masuk: ${q} ${unitName}`, createdBy: req.user?.id || null,
+    },
+    { transaction: t },
+  );
+  return {
+    message: `Stok "${product.name}" bertambah ${q} ${unitName} (+${added} ${product.baseUnit}). Stok baru: ${next} ${product.baseUnit}.`,
+    data: { product, movement },
+  };
+});
 
-    if (!productId || !qty) {
-      await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Produk dan kuantitas barang keluar wajib diisi.',
-      });
-    }
-
-    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!product) {
-      await t.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Produk material tidak ditemukan.',
-      });
-    }
-
-    let conversionFactor = 1;
-    let unitName = product.baseUnit;
-
-    if (unitId) {
-      const unit = await ProductUnit.findByPk(unitId, { transaction: t, lock: t.LOCK.UPDATE });
-      if (!unit || unit.productId !== product.id) {
-        await t.rollback();
-        return res.status(400).json({ success: false, message: 'Satuan tidak valid untuk produk ini.' });
-      }
-      if (unit) {
-        conversionFactor = parseFloat(unit.conversionFactor);
-        unitName = unit.unitName;
-      }
-    }
-
-    const numQty = parseFloat(qty);
-    const deductedBaseQty = numQty * conversionFactor;
-    const prevStock = product.currentStockBase;
-    if (deductedBaseQty > prevStock) {
-      await t.rollback();
-      return res.status(400).json({ success: false, message: 'Stok tidak mencukupi.' });
-    }
-    const newStock = prevStock - deductedBaseQty;
-
-    await product.update({ currentStockBase: newStock }, { transaction: t, lock: t.LOCK.UPDATE });
-
-    const noteDetails = [
-      destination ? `Tujuan: ${destination}` : '',
-      receiver ? `Penerima: ${receiver}` : '',
-      driver ? `Pengemudi: ${driver}` : '',
-      notes || '',
-    ].filter(Boolean).join(' | ');
-
-    const movement = await StockMovement.create(
-      {
-        productId: product.id,
-        type: 'ADJUSTMENT',
-        qtyBaseUnit: -deductedBaseQty,
-        previousStock: prevStock,
-        newStock: newStock,
-        notes: `Pengeluaran Material (${numQty} ${unitName}): ${noteDetails}`,
-        createdBy: req.user ? req.user.id : null,
-      },
-      { transaction: t, lock: t.LOCK.UPDATE }
-    );
-
-    await t.commit();
-
-    res.status(201).json({
-      success: true,
-      message: `Surat Jalan Pengeluaran "${product.name}" berhasil dicatat. Sisa stok: ${newStock} ${product.baseUnit}.`,
-      data: {
-        product,
-        movement,
-      },
-    });
-  } catch (err) {
-    if (t && !t.finished) await t.rollback();
-    next(err);
+export const outStock = withTx(async (req, t) => {
+  const { productId, unitId, qty, destination, receiver, driver, notes } = req.body;
+  const q = num(qty);
+  if (!productId || !(q > 0)) throw new StockError(400, 'Produk dan kuantitas barang keluar wajib diisi (lebih dari 0).');
+  const { product, factor, unitName } = await loadProductUnit(t, productId, unitId);
+  const out = roundStock(q * factor);
+  const prev = parseFloat(product.currentStockBase) || 0;
+  const setting = await Setting.findByPk('system_settings', { transaction: t });
+  const allowMinus = String(setting?.allowMinusStock || 'no').toLowerCase() === 'yes';
+  if (!allowMinus && out > prev) {
+    throw new StockError(400, `Stok "${product.name}" tidak mencukupi. Tersedia ${prev} ${product.baseUnit}, diminta ${out} ${product.baseUnit}.`);
   }
-};
+  const next = roundStock(prev - out);
+  await product.update({ currentStockBase: next }, { transaction: t });
+  const refNo = await nextDocNumber(sequelize, t, { prefix: 'DO', model: StockMovement, field: 'refNo' });
+  const movement = await StockMovement.create(
+    {
+      productId: product.id, type: 'OUT', qtyBaseUnit: -out, previousStock: prev, newStock: next, refNo,
+      destination: destination || null, receiver: receiver || null, driver: driver || null,
+      unitName, qtyInput: q, notes: notes || null, createdBy: req.user?.id || null,
+    },
+    { transaction: t },
+  );
+  return {
+    message: `Surat jalan ${refNo} dicatat. Sisa stok "${product.name}": ${next} ${product.baseUnit}.`,
+    data: { product, movement },
+  };
+});
 
-export const transferStock = async (req, res, next) => {
-  let t;
-  try {
-    t = await sequelize.transaction();
-    const { productId, unitId, qty, fromLocation, toLocation, notes } = req.body;
+export const transferStock = withTx(async (req, t) => {
+  const { productId, unitId, qty, fromLocation, toLocation, notes } = req.body;
+  const q = num(qty);
+  if (!productId || !(q > 0)) throw new StockError(400, 'Produk dan kuantitas mutasi wajib diisi (lebih dari 0).');
+  if (!fromLocation || !toLocation) throw new StockError(400, 'Lokasi asal dan lokasi tujuan wajib diisi.');
+  if (String(fromLocation).trim() === String(toLocation).trim()) throw new StockError(400, 'Lokasi asal dan tujuan tidak boleh sama.');
+  const { product, factor, unitName } = await loadProductUnit(t, productId, unitId);
+  const moved = roundStock(q * factor);
+  const stock = parseFloat(product.currentStockBase) || 0;
+  if (moved > stock) throw new StockError(400, `Jumlah mutasi (${moved} ${product.baseUnit}) melebihi stok tersedia (${stock} ${product.baseUnit}).`);
+  await product.update({ location: String(toLocation).trim() }, { transaction: t });
+  const refNo = await nextDocNumber(sequelize, t, { prefix: 'MUT', model: StockMovement, field: 'refNo' });
+  const movement = await StockMovement.create(
+    {
+      productId: product.id, type: 'TRANSFER', qtyBaseUnit: moved, previousStock: stock, newStock: stock, refNo,
+      fromLocation: String(fromLocation).trim(), toLocation: String(toLocation).trim(), unitName, qtyInput: q,
+      notes: notes || null, createdBy: req.user?.id || null,
+    },
+    { transaction: t },
+  );
+  return { message: `Mutasi ${refNo} dicatat. Total stok tidak berubah.`, data: { product, movement } };
+});
 
-    if (!productId || !qty) {
-      await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Produk dan kuantitas mutasi stok wajib diisi.',
-      });
+export const adjustStock = withTx(async (req, t) => {
+  const { productId, actualBaseQty, reason } = req.body;
+  const target = num(actualBaseQty);
+  if (!productId || !Number.isFinite(target)) throw new StockError(400, 'Produk dan stok fisik riil (satuan dasar) wajib diisi.');
+  if (target < 0) throw new StockError(400, 'Stok fisik tidak boleh negatif.');
+  if (!reason || !String(reason).trim()) throw new StockError(400, 'Alasan penyesuaian wajib diisi.');
+  const { product } = await loadProductUnit(t, productId);
+  const prev = parseFloat(product.currentStockBase) || 0;
+  const next = roundStock(target);
+  const diff = roundStock(next - prev);
+  await product.update({ currentStockBase: next }, { transaction: t });
+  const movement = await StockMovement.create(
+    {
+      productId: product.id, type: 'ADJUSTMENT', qtyBaseUnit: diff, previousStock: prev, newStock: next,
+      reason: String(reason).trim(), notes: null, createdBy: req.user?.id || null,
+    },
+    { transaction: t },
+  );
+  return { status: 200, message: `Stok "${product.name}" disesuaikan menjadi ${next} ${product.baseUnit}.`, data: { product, movement } };
+});
+
+// Stok opname: beberapa produk sekaligus. Hanya produk yang selisih yang dicatat & disesuaikan.
+export const opnameStock = withTx(async (req, t) => {
+  const { items, notes } = req.body;
+  if (!Array.isArray(items) || items.length === 0) throw new StockError(400, 'Minimal satu produk hasil hitung fisik.');
+  const ids = [...new Set(items.map((i) => i.productId))].sort();
+  if (ids.length !== items.length) throw new StockError(400, 'Produk tidak boleh dobel dalam satu opname.');
+  const refNo = await nextDocNumber(sequelize, t, { prefix: 'OPN', model: StockMovement, field: 'refNo' });
+  const byId = new Map(items.map((i) => [i.productId, i]));
+  const results = [];
+  for (const id of ids) {
+    const physical = num(byId.get(id).physicalQty);
+    if (!Number.isFinite(physical) || physical < 0) throw new StockError(400, 'Hasil hitung fisik harus angka 0 atau lebih.');
+    const product = await Product.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!product) throw new StockError(404, 'Produk tidak ditemukan.');
+    const prev = parseFloat(product.currentStockBase) || 0;
+    const next = roundStock(physical);
+    const diff = roundStock(next - prev);
+    if (diff !== 0) {
+      await product.update({ currentStockBase: next }, { transaction: t });
+      await StockMovement.create(
+        {
+          productId: product.id, type: 'OPNAME', qtyBaseUnit: diff, previousStock: prev, newStock: next, refNo,
+          reason: notes || 'Stok opname', createdBy: req.user?.id || null,
+        },
+        { transaction: t },
+      );
     }
-
-    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!product) {
-      await t.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Produk material tidak ditemukan.',
-      });
-    }
-
-    let conversionFactor = 1;
-    let unitName = product.baseUnit;
-
-    if (unitId) {
-      const unit = await ProductUnit.findByPk(unitId, { transaction: t, lock: t.LOCK.UPDATE });
-      if (!unit || unit.productId !== product.id) {
-        await t.rollback();
-        return res.status(400).json({ success: false, message: 'Satuan tidak valid untuk produk ini.' });
-      }
-      if (unit) {
-        conversionFactor = parseFloat(unit.conversionFactor);
-        unitName = unit.unitName;
-      }
-    }
-
-    const numQty = parseFloat(qty);
-    const baseQty = numQty * conversionFactor;
-    if (baseQty > product.currentStockBase) {
-      await t.rollback();
-      return res.status(400).json({ success: false, message: 'Stok tidak mencukupi untuk mutasi.' });
-    }
-
-    const movement = await StockMovement.create(
-      {
-        productId: product.id,
-        type: 'ADJUSTMENT',
-        qtyBaseUnit: 0,
-        previousStock: product.currentStockBase,
-        newStock: product.currentStockBase,
-        notes: `Mutasi dari [${fromLocation || 'Gudang Utama'}] ke [${toLocation || 'Toko'}] (${numQty} ${unitName}): ${notes || 'Mutasi internal'}`,
-        createdBy: req.user ? req.user.id : null,
-      },
-      { transaction: t, lock: t.LOCK.UPDATE }
-    );
-
-    await t.commit();
-
-    res.status(201).json({
-      success: true,
-      message: `Mutasi lokasi stok "${product.name}" sebanyak ${numQty} ${unitName} berhasil dicatat.`,
-      data: {
-        product,
-        movement,
-      },
-    });
-  } catch (err) {
-    if (t && !t.finished) await t.rollback();
-    next(err);
+    results.push({ productId: id, name: product.name, before: prev, physical: next, difference: diff });
   }
-};
-
-export const adjustStock = async (req, res, next) => {
-  let t;
-  try {
-    t = await sequelize.transaction();
-    const { productId, actualBaseQty, reason } = req.body;
-
-    if (!productId || actualBaseQty === undefined) {
-      await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: 'Produk dan kuantitas fisik riil (dalam satuan dasar) wajib diisi.',
-      });
-    }
-
-    const product = await Product.findByPk(productId, { transaction: t, lock: t.LOCK.UPDATE });
-    if (!product) {
-      await t.rollback();
-      return res.status(404).json({
-        success: false,
-        message: 'Produk material tidak ditemukan.',
-      });
-    }
-
-    const targetStock = parseFloat(actualBaseQty);
-    const prevStock = product.currentStockBase;
-    const difference = targetStock - prevStock;
-
-    await product.update({ currentStockBase: targetStock }, { transaction: t, lock: t.LOCK.UPDATE });
-
-    const movement = await StockMovement.create(
-      {
-        productId: product.id,
-        type: 'ADJUSTMENT',
-        qtyBaseUnit: difference,
-        previousStock: prevStock,
-        newStock: targetStock,
-        notes: reason || `Penyesuaian Fisik Opname (Selisih: ${difference >= 0 ? '+' : ''}${difference} ${product.baseUnit})`,
-        createdBy: req.user ? req.user.id : null,
-      },
-      { transaction: t, lock: t.LOCK.UPDATE }
-    );
-
-    await t.commit();
-
-    res.json({
-      success: true,
-      message: `Stok "${product.name}" berhasil disesuaikan menjadi ${targetStock} ${product.baseUnit}.`,
-      data: {
-        product,
-        movement,
-      },
-    });
-  } catch (err) {
-    if (t && !t.finished) await t.rollback();
-    next(err);
-  }
-};
+  const adjusted = results.filter((r) => r.difference !== 0).length;
+  return { message: `Opname ${refNo}: ${results.length} produk dihitung, ${adjusted} selisih disesuaikan.`, data: { refNo, checked: results.length, adjusted, results } };
+});
 
 export const getMovements = async (req, res, next) => {
   try {
-    const { productId, type, limit = 100 } = req.query;
+    const { productId, type, from, to } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
     const where = {};
-    if (productId) {
-      where.productId = productId;
-    }
-    if (type) {
-      where.type = type;
-    }
+    if (productId) where.productId = productId;
+    if (type) where.type = { [Op.in]: String(type).split(',') };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from || '')) where.createdAt = { ...(where.createdAt || {}), [Op.gte]: new Date(`${from}T00:00:00+07:00`) };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to || '')) where.createdAt = { ...(where.createdAt || {}), [Op.lte]: new Date(`${to}T23:59:59.999+07:00`) };
 
-    const movements = await StockMovement.findAll({
-      where,
-      limit: parseInt(limit, 10),
-      order: [['createdAt', 'DESC']],
+    const rows = await StockMovement.findAll({
+      where, limit, order: [['createdAt', 'DESC']],
       include: [
         { model: Product, as: 'product', attributes: ['id', 'sku', 'name', 'baseUnit'] },
+        { model: User, as: 'creator', attributes: ['id', 'name'] },
       ],
     });
-
-    res.json({
-      success: true,
-      data: movements,
-    });
+    res.json({ success: true, data: rows, meta: { count: rows.length, limit, today: jakartaDate() } });
   } catch (err) {
     next(err);
   }

@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { Product, ProductUnit, Category, StockMovement, sequelize } from '../models/index.js';
+import { Product, ProductUnit, Category, Brand, StockMovement, WholesalePrice, sequelize } from '../models/index.js';
 
 export const getAllProducts = async (req, res, next) => {
   try {
@@ -25,6 +25,8 @@ export const getAllProducts = async (req, res, next) => {
       where,
       include: [
         { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
+        { model: Brand, as: 'brand', attributes: ['id', 'name'] },
+        { model: WholesalePrice, as: 'wholesale', where: { isActive: true }, required: false, attributes: ['id', 'unitId', 'label', 'minQty', 'price'] },
         {
           model: ProductUnit,
           as: 'units',
@@ -90,10 +92,9 @@ export const getProductById = async (req, res, next) => {
 };
 
 export const createProduct = async (req, res, next) => {
-  let t;
+  const t = await sequelize.transaction();
   try {
-    t = await sequelize.transaction();
-    const { sku, name, categoryId, baseUnit, minStock, initialStock, units } = req.body;
+    const { sku, name, categoryId, brandId, baseUnit, minStock, initialStock, units, location } = req.body;
 
     if (!sku || !name || !baseUnit) {
       await t.rollback();
@@ -103,15 +104,17 @@ export const createProduct = async (req, res, next) => {
       });
     }
 
-    const currentStockBase = Number(initialStock ?? req.body.currentStockBase ?? 0);
+    const currentStockBase = parseFloat(initialStock) || 0;
 
     const product = await Product.create(
       {
         sku,
         name,
         categoryId: categoryId || null,
+        brandId: brandId || null,
         baseUnit,
         minStock: parseFloat(minStock) || 0,
+        location: location ? String(location).trim() : null,
         currentStockBase,
       },
       { transaction: t }
@@ -177,19 +180,18 @@ export const createProduct = async (req, res, next) => {
       data: created,
     });
   } catch (err) {
-    if (t && !t.finished) await t.rollback();
+    await t.rollback();
     next(err);
   }
 };
 
 export const updateProduct = async (req, res, next) => {
-  let t;
+  const t = await sequelize.transaction();
   try {
-    t = await sequelize.transaction();
     const { id } = req.params;
-    const { sku, name, categoryId, baseUnit, minStock, currentStockBase, buyPrice, sellPrice, units } = req.body;
+    const { sku, name, categoryId, brandId, baseUnit, minStock, currentStockBase, buyPrice, sellPrice, units, location } = req.body;
 
-    const product = await Product.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+    const product = await Product.findByPk(id, { transaction: t });
     if (!product) {
       await t.rollback();
       return res.status(404).json({
@@ -202,8 +204,10 @@ export const updateProduct = async (req, res, next) => {
     if (sku !== undefined) updates.sku = sku;
     if (name !== undefined) updates.name = name;
     if (categoryId !== undefined) updates.categoryId = categoryId || null;
+    if (brandId !== undefined) updates.brandId = brandId || null;
     if (baseUnit !== undefined) updates.baseUnit = baseUnit;
     if (minStock !== undefined) updates.minStock = parseFloat(minStock) || 0;
+    if (location !== undefined) updates.location = location ? String(location).trim() : null;
     if (currentStockBase !== undefined) updates.currentStockBase = parseFloat(currentStockBase) || 0;
 
     await product.update(updates, { transaction: t });
@@ -211,9 +215,7 @@ export const updateProduct = async (req, res, next) => {
     // Update product units if provided or prices provided
     if (Array.isArray(units) && units.length > 0) {
       for (const u of units) {
-        if (!u.id) {
-          await ProductUnit.create({ ...u, productId: product.id, isBase: Number(u.conversionFactor) === 1 }, { transaction: t });
-        } else {
+        if (u.id) {
           await ProductUnit.update(
             {
               unitName: u.unitName,
@@ -254,7 +256,7 @@ export const updateProduct = async (req, res, next) => {
       data: updated,
     });
   } catch (err) {
-    if (t && !t.finished) await t.rollback();
+    await t.rollback();
     next(err);
   }
 };

@@ -1,16 +1,37 @@
-import { randomUUID } from 'node:crypto';
-import { Supplier } from '../models/index.js';
+import { Supplier, sequelize } from '../models/index.js';
+
+const withTotals = async (rows) => {
+  const stats = await sequelize.query(
+    `SELECT "supplierId" AS id, COUNT(*)::int AS "purchaseCount", COALESCE(SUM("totalAmount"),0) AS "purchaseTotal",
+            COALESCE(SUM("totalAmount") FILTER (WHERE "paymentStatus"='BELUM_LUNAS'),0) AS "unpaidTotal",
+            MAX("purchaseDate") AS "lastPurchaseDate"
+     FROM purchases GROUP BY "supplierId"`,
+    { type: sequelize.QueryTypes.SELECT },
+  );
+  const byId = new Map(stats.map((x) => [x.id, x]));
+  return rows.map((r) => {
+    const j = r.toJSON();
+    const st = byId.get(r.id);
+    return {
+      ...j,
+      purchaseCount: st?.purchaseCount || 0,
+      purchaseTotal: parseFloat(st?.purchaseTotal) || 0,
+      unpaidTotal: parseFloat(st?.unpaidTotal) || 0,
+      lastPurchaseDate: st?.lastPurchaseDate || null,
+    };
+  });
+};
 
 export const getAllSuppliers = async (req, res, next) => {
   try {
-    let suppliers = await Supplier.findAll({
+    const suppliers = await Supplier.findAll({
       where: { isActive: true },
       order: [['createdAt', 'ASC']],
     });
 
     res.json({
       success: true,
-      data: suppliers,
+      data: await withTotals(suppliers),
     });
   } catch (err) {
     next(err);
@@ -31,7 +52,7 @@ export const getSupplierById = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: supplier,
+      data: (await withTotals([supplier]))[0],
     });
   } catch (err) {
     next(err);
@@ -49,7 +70,13 @@ export const createSupplier = async (req, res, next) => {
       });
     }
 
-    const finalCode = code || `SI-${randomUUID()}`;
+    let finalCode = code;
+    if (!finalCode) {
+      const maxN = (await Supplier.findAll({ attributes: ['code'], raw: true }))
+        .map((x) => parseInt(String(x.code).replace(/\D/g, ''), 10) || 0)
+        .reduce((a, b) => Math.max(a, b), 0);
+      finalCode = `SI-${String(maxN + 1).padStart(3, '0')}`;
+    }
 
     const supplier = await Supplier.create({
       code: finalCode,

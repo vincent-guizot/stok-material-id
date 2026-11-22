@@ -1,4 +1,4 @@
-import { Setting, User } from '../models/index.js';
+import { Setting } from '../models/index.js';
 
 export const getSettings = async (req, res, next) => {
   try {
@@ -27,7 +27,7 @@ export const getSettings = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: { ...settings.toJSON(), usersList: req.user?.role === 'admin' ? await User.findAll({ attributes: ['id', 'name', 'username', 'role'] }) : [] },
+      data: settings,
     });
   } catch (err) {
     next(err);
@@ -54,11 +54,13 @@ export const updateSettings = async (req, res, next) => {
       'showCashier',
       'showThanks',
       'autoPrint',
+      'taxRate',
       'lowStockAlert',
       'emptyStockAlert',
       'allowMinusStock',
       'showHppCashier',
       'branches',
+      'usersList',
     ];
 
     const updates = {};
@@ -68,12 +70,23 @@ export const updateSettings = async (req, res, next) => {
       }
     }
 
+    if (updates.taxRate !== undefined) {
+      const rate = Number(updates.taxRate);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+        return res.status(400).json({
+          success: false,
+          message: 'Tarif PPN harus berupa angka antara 0 dan 100.',
+        });
+      }
+      updates.taxRate = rate;
+    }
+
     await settings.update(updates);
 
     res.json({
       success: true,
       message: 'Pengaturan sistem berhasil disimpan secara permanen.',
-      data: { ...settings.toJSON(), usersList: req.user?.role === 'admin' ? await User.findAll({ attributes: ['id', 'name', 'username', 'role'] }) : [] },
+      data: settings,
     });
   } catch (err) {
     next(err);
