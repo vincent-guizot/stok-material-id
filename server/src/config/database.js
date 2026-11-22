@@ -11,10 +11,10 @@ let sequelize;
 
 // Helper untuk memastikan database lokal sudah dibuat
 export async function ensureDatabaseExists(customDbName) {
-  if (neonUrl && !isTest) return;
+  if (neonUrl) return;
 
   const dbHost = process.env.DB_HOST || "127.0.0.1";
-  const dbPort = process.env.DB_PORT || 5432;
+  const dbPort = process.env.DB_PORT || 1000;
   const dbUser = process.env.DB_USER || "postgres";
   const dbPass = process.env.DB_PASS || "admin";
   const targetDb =
@@ -38,7 +38,7 @@ export async function ensureDatabaseExists(customDbName) {
       [targetDb],
     );
     if (checkRes.rowCount === 0) {
-      await client.query(`CREATE DATABASE "${targetDb.replaceAll('"', '""')}"`);
+      await client.query(`CREATE DATABASE "${targetDb}"`);
       console.log(
         `[Database] Database '${targetDb}' berhasil dibuat di PostgreSQL lokal.`,
       );
@@ -58,7 +58,7 @@ export async function ensureDatabaseExists(customDbName) {
 if (isTest) {
   // Dalam mode test, gunakan PostgreSQL stokmaterial_test_db di lokal
   const dbHost = process.env.DB_HOST || "127.0.0.1";
-  const dbPort = process.env.DB_PORT || 5432;
+  const dbPort = process.env.DB_PORT || 1000;
   const dbUser = process.env.DB_USER || "postgres";
   const dbPass = process.env.DB_PASS || "admin";
   const testDbName = process.env.DB_NAME_TEST || "stokmaterial_test_db";
@@ -88,7 +88,7 @@ if (isTest) {
   });
 } else {
   const dbHost = process.env.DB_HOST || "127.0.0.1";
-  const dbPort = process.env.DB_PORT || 5432;
+  const dbPort = process.env.DB_PORT || 1000;
   const dbUser = process.env.DB_USER || "postgres";
   const dbPass = process.env.DB_PASS || "admin";
   const dbName = process.env.DB_NAME || "stokmaterial_db";
