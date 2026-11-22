@@ -1,4 +1,3 @@
-import { jwtSecret } from '../config/auth.js';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/index.js';
 
@@ -13,17 +12,17 @@ export const authenticate = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const secret = jwtSecret();
+    const secret = process.env.JWT_SECRET || 'stokmaterial_secret_key_super_aman_2026';
 
     const decoded = jwt.verify(token, secret);
     const user = await User.findByPk(decoded.id, {
-      attributes: ['id', 'name', 'username', 'role'],
+      attributes: ['id', 'name', 'username', 'role', 'isActive'],
     });
 
-    if (!user) {
+    if (!user || user.isActive === false) {
       return res.status(401).json({
         success: false,
-        message: 'Sesi tidak valid. Pengguna tidak ditemukan.',
+        message: 'Sesi tidak valid. Pengguna tidak ditemukan atau dinonaktifkan.',
       });
     }
 

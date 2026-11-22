@@ -1,6 +1,3 @@
-import swaggerUi from 'swagger-ui-express';
-import { readFileSync } from 'node:fs';
-const openapi = JSON.parse(readFileSync(new URL('./openapi.json', import.meta.url), 'utf8'));
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -10,6 +7,7 @@ import { ensureDatabaseExists } from "./config/database.js";
 import sequelize from "./config/database.js";
 import { User } from "./models/index.js";
 import { runSeeder } from "./seeders/initialSeed.js";
+import { migrateUp } from "./database/migrator.js";
 
 dotenv.config();
 
@@ -25,12 +23,9 @@ app.get("/", (req, res) => {
   res.json({
     app: "StokMaterial.id - Sistem POS Toko Bangunan API",
     status: "running",
-    docs: "/api-docs",
+    docs: "/api/v1/health",
   });
 });
-
-app.get('/api-docs.json', (req, res) => res.json(openapi));
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openapi));
 
 // Mount API v1
 app.use("/api/v1", routes);
@@ -55,8 +50,8 @@ if (process.env.NODE_ENV !== "test") {
       await sequelize.authenticate();
       console.log("[Database] Terhubung dengan sukses ke PostgreSQL.");
 
-      await sequelize.sync();
-      console.log("[Database] Sinkronisasi skema tabel selesai.");
+      await migrateUp();
+      console.log("[Database] Migration selesai (skema terbaru).");
 
       // Pastikan ada akun user minimal (jika database baru/kosong)
       const userCount = await User.count();

@@ -8,6 +8,15 @@ import debtRoutes from './debtRoutes.js';
 import stockRoutes from './stockRoutes.js';
 import reportRoutes from './reportRoutes.js';
 import supplierRoutes from './supplierRoutes.js';
+import brandRoutes from './brandRoutes.js';
+import purchaseRoutes from './purchaseRoutes.js';
+import userRoutes from './userRoutes.js';
+import branchRoutes from './branchRoutes.js';
+import expenseRoutes from './expenseRoutes.js';
+import wholesaleRoutes from './wholesaleRoutes.js';
+import helpRoutes from './helpRoutes.js';
+import notificationRoutes from './notificationRoutes.js';
+import backupRoutes from './backupRoutes.js';
 import settingRoutes from './settingRoutes.js';
 
 const router = Router();
@@ -21,6 +30,15 @@ router.use('/debts', debtRoutes);
 router.use('/stocks', stockRoutes);
 router.use('/reports', reportRoutes);
 router.use('/suppliers', supplierRoutes);
+router.use('/brands', brandRoutes);
+router.use('/purchases', purchaseRoutes);
+router.use('/users', userRoutes);
+router.use('/branches', branchRoutes);
+router.use('/expenses', expenseRoutes);
+router.use('/wholesale', wholesaleRoutes);
+router.use('/help', helpRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/backup', backupRoutes);
 router.use('/settings', settingRoutes);
 
 router.get('/health', (req, res) => {

@@ -1,5 +1,3 @@
-import { validate } from '../middlewares/validate.js';
-import { authenticate } from '../middlewares/authMiddleware.js';
 import { Router } from 'express';
 import {
   getAllCustomers,
@@ -9,14 +7,15 @@ import {
   deleteCustomer,
 } from '../controllers/customerController.js';
 
+import { authenticate } from '../middlewares/authMiddleware.js';
+import { authorize } from '../middlewares/roleMiddleware.js';
+
 const router = Router();
-router.use(validate);
-router.param('id', (req, res, next) => validate(req, res, next));
 
 router.get('/', authenticate, getAllCustomers);
 router.get('/:id', authenticate, getCustomerById);
 router.post('/', authenticate, createCustomer);
 router.put('/:id', authenticate, updateCustomer);
-router.delete('/:id', authenticate, deleteCustomer);
+router.delete('/:id', authenticate, authorize('admin'), deleteCustomer);
 
 export default router;
