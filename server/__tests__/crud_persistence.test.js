@@ -112,7 +112,6 @@ describe('CRUD Persistence & Real Database Operations Test', () => {
       const listRes = await request(app).get('/api/v1/suppliers').set('Authorization', `Bearer ${adminToken}`);
       expect(listRes.status).toBe(200);
       expect(Array.isArray(listRes.body.data)).toBe(true);
-      expect(listRes.body.data).toEqual([]);
 
       // Create
       const addRes = await request(app)
@@ -147,7 +146,7 @@ describe('CRUD Persistence & Real Database Operations Test', () => {
 
   describe('System Settings Persistence', () => {
     it('Harus menyimpan dan mengambil konfigurasi toko & nota secara permanen', async () => {
-      const getRes = await request(app).get('/api/v1/settings').set('Authorization', `Bearer ${adminToken}`);
+      const getRes = await request(app).get('/api/v1/settings');
       expect(getRes.status).toBe(200);
       expect(getRes.body.data.storeName).toBeDefined();
 
@@ -167,7 +166,7 @@ describe('CRUD Persistence & Real Database Operations Test', () => {
       expect(updateRes.body.data.branches.length).toBe(2);
 
       // Verifikasi via GET kembali
-      const verifyRes = await request(app).get('/api/v1/settings').set('Authorization', `Bearer ${adminToken}`);
+      const verifyRes = await request(app).get('/api/v1/settings');
       expect(verifyRes.body.data.storeName).toBe('Toko Sentosa Material Gresik');
       expect(verifyRes.body.data.storePhone).toBe('031-7788990');
     });

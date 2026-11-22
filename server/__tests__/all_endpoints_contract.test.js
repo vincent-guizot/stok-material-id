@@ -59,7 +59,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('2. Categories Endpoint Contract', () => {
     it('GET /api/v1/categories harus mengembalikan daftar kategori publik', async () => {
-      const res = await request(app).get('/api/v1/categories').set('Authorization', `Bearer ${adminToken}`);
+      const res = await request(app).get('/api/v1/categories');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.data)).toBe(true);
@@ -126,7 +126,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
     it('POST /api/v1/products harus berhasil membuat produk baru lengkap dengan satuan bertingkat', async () => {
       const res = await request(app)
-        .post('/api/v1/products')
+        .post('/api/v1/products').set('Authorization', `Bearer ${adminToken}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           sku: 'BTA-HBL-001',
@@ -210,7 +210,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
     it('GET /api/v1/transactions harus mengembalikan riwayat semua transaksi', async () => {
       const res = await request(app)
-        .get('/api/v1/transactions').set('Authorization', `Bearer ${adminToken}`)
+        .get('/api/v1/transactions')
         .set('Authorization', `Bearer ${cashierToken}`);
 
       expect(res.status).toBe(200);
@@ -221,7 +221,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
     it('GET /api/v1/transactions/:id harus mengembalikan rincian lengkap invoice transaksi', async () => {
       const res = await request(app)
-        .get(`/api/v1/transactions/${createdTransactionId}`).set('Authorization', `Bearer ${adminToken}`)
+        .get(`/api/v1/transactions/${createdTransactionId}`)
         .set('Authorization', `Bearer ${cashierToken}`);
 
       expect(res.status).toBe(200);
@@ -235,7 +235,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
   describe('6. Debts & Kasbon Mandor Contract', () => {
     it('GET /api/v1/debts/history harus mengembalikan riwayat mutasi pembayaran cicilan hutang', async () => {
       const res = await request(app)
-        .get('/api/v1/debts/history').set('Authorization', `Bearer ${adminToken}`)
+        .get('/api/v1/debts/history')
         .set('Authorization', `Bearer ${cashierToken}`);
 
       expect(res.status).toBe(200);
@@ -271,7 +271,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
   describe('8. Reports Dashboard Summary Contract', () => {
     it('GET /api/v1/reports/summary harus mengembalikan ringkasan omset, piutang, dan stok untuk admin', async () => {
       const res = await request(app)
-        .get('/api/v1/reports/summary').set('Authorization', `Bearer ${adminToken}`)
+        .get('/api/v1/reports/summary')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -305,7 +305,7 @@ describe('All API Endpoints Contract & Response Verification', () => {
 
   describe('10. System Settings Endpoint Contract', () => {
     it('GET /api/v1/settings harus mengembalikan konfigurasi toko dan struk', async () => {
-      const res = await request(app).get('/api/v1/settings').set('Authorization', `Bearer ${adminToken}`);
+      const res = await request(app).get('/api/v1/settings');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toBeDefined();

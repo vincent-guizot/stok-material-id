@@ -108,29 +108,39 @@ describe('POS Checkout & Konversi Multi-Satuan Test', () => {
   });
 
   it('Harus menolak transaksi Kasbon jika melebihi plafon batas kredit mandor', async () => {
-    // Mandor limit 5.000.000, hutang saat ini 1.000.000 (sisa plafon 4.000.000)
-    // Mencoba kasbon Rp 4.500.000 -> Harus ditolak!
+    // Limit 5.000.000. Hutang dinaikkan ke 4.995.000 (sisa plafon 5.000).
+    // Belanja 10 Kg x 1.500 = Rp 15.000 dikasbon penuh -> total hutang 5.010.000 > limit -> Harus ditolak!
+    await Customer.update({ currentDebt: 4995000 }, { where: { id: testData.customer.id } });
+
     const res = await request(app)
       .post('/api/v1/transactions/checkout')
       .set('Authorization', `Bearer ${kasirToken}`)
       .send({
         customerId: testData.customer.id,
-        items: [
-          {
-            productId: testData.product.id,
-            unitId: testData.unitKg.id,
-            qty: 10,
-            unitPrice: 1500, // Rp 15.000
-          },
-        ],
-        payments: [
-          { method: 'DEBT', amount: 4500000 },
-        ],
+        items: [{ productId: testData.product.id, unitId: testData.unitKg.id, qty: 10 }],
+        payments: [{ method: 'DEBT', amount: 15000 }],
       });
+
+    // kembalikan saldo awal untuk test berikutnya
+    await Customer.update({ currentDebt: 1000000 }, { where: { id: testData.customer.id } });
 
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
     expect(res.body.message).toContain('terlampaui');
+  });
+
+  it('Harus menolak kasbon yang nominalnya lebih besar dari total belanja (kelebihan bukan dari tunai)', async () => {
+    const res = await request(app)
+      .post('/api/v1/transactions/checkout')
+      .set('Authorization', `Bearer ${kasirToken}`)
+      .send({
+        customerId: testData.customer.id,
+        items: [{ productId: testData.product.id, unitId: testData.unitKg.id, qty: 10 }],
+        payments: [{ method: 'DEBT', amount: 4500000 }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('melebihi total');
   });
 
   it('Harus sukses mencatat pembayaran cicilan kasbon dan mengurangi saldo hutang mandor', async () => {

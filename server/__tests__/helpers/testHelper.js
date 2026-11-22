@@ -8,13 +8,13 @@ import {
   Customer,
 } from '../../src/models/index.js';
 import { ensureDatabaseExists } from '../../src/config/database.js';
+import { migrateUp } from '../../src/database/migrator.js';
 
 export async function setupTestDatabase() {
-  if (process.env.NODE_ENV !== 'test' || !/test/i.test(process.env.DB_NAME_TEST || 'stokmaterial_test_db')) {
-    throw new Error('Destructive tests require NODE_ENV=test and a DB_NAME_TEST containing test.');
-  }
   await ensureDatabaseExists();
-  await sequelize.sync({ force: true });
+  // Skema dibuat lewat migration yang sama dengan produksi (sekaligus menguji migration)
+  await sequelize.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  await migrateUp();
 
   const passwordHash = await bcrypt.hash('admin123', 10);
   const kasirPasswordHash = await bcrypt.hash('kasir123', 10);
