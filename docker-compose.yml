@@ -1,0 +1,52 @@
+name: app-web-stokmaterial
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: stokmaterial_db
+    ports:
+      - "1000:5432"
+    volumes:
+      - stokmaterial_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stokmaterial_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  server:
+    build:
+      context: ./server
+    ports:
+      - "3500:5000"
+    environment:
+      PORT: 5000
+      NODE_ENV: development
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: admin
+      DB_NAME: stokmaterial_db
+      JWT_SECRET: stokmaterial_secret_key_super_aman_2026
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ./client
+    ports:
+      - "5000:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  stokmaterial_db_data:
+
