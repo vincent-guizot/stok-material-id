@@ -47,51 +47,75 @@ Sistem Point of Sale (POS) modern yang dirancang khusus untuk operasional **Toko
 
 - **Frontend**: React 18, Vite, Tailwind CSS, Shadcn UI primitives, Zustand, TanStack Query (React Query v5), Axios, Lucide Icons, Framer Motion, Canvas Confetti.
 - **Backend**: Node.js, Express.js (ES Module), Sequelize ORM, PostgreSQL (`pg`).
-- **Testing**: Jest, Supertest (9 Automated Integration Tests).
-- **Database Routing**: Smart Fallback (*Otomatis mendeteksi `NEON_DATABASE_URL`; jika tidak ada, otomatis fallback ke PostgreSQL lokal `localhost:5432`*).
+- **Testing**: Jest, Supertest (96 test otomatis, termasuk ketepatan hitungan uang).
+- **Database Routing**: Smart Fallback (*Otomatis mendeteksi `NEON_DATABASE_URL`; jika tidak ada, otomatis fallback ke PostgreSQL lokal `localhost:1000`*).
 
 ---
 
 ## 🚀 Cara Menjalankan Aplikasi
 
 ### 1. Prasyarat
-- Node.js v18+ (direkomendasikan v20+)
-- PostgreSQL lokal aktif di `localhost:5432` (user: `postgres`, password: `admin`) atau URL Neon PostgreSQL.
+- Node.js v20+
+- PostgreSQL. Paling mudah lewat Docker: `docker compose up -d db` (Postgres tersedia di **localhost:1000**, user `postgres`, password `admin`, db `stokmaterial_db`).
 
-### 2. Setup Backend & Seed Database
+### 2. Backend
 ```bash
-# Masuk ke folder server
 cd server
-
-# Install dependensi (jika belum)
+cp .env.example .env       # sesuaikan bila perlu (DB_PORT=1000)
 npm install
-
-# Isi database dengan data bawaan material bangunan nyata Indonesia & 3 akun default
-npm run seed
-
-# Jalankan server API (port 5000)
-npm run dev
+npm run dev                # API di http://localhost:5000/api/v1
 ```
+Saat start, server otomatis menjalankan **migration** yang belum terpasang, dan mengisi **seeder** hanya jika belum ada pengguna.
 
-### 3. Setup Frontend
-Buka terminal baru:
+| Perintah | Fungsi |
+| :--- | :--- |
+| `npm run db:migrate` | Jalankan migration yang belum dijalankan (umzug, tabel `SequelizeMeta`) |
+| `npm run db:rollback` | Batalkan migration terakhir |
+| `npm run db:status` | Lihat migration terpasang/tertunda |
+| `npm run db:seed` | Isi data awal (idempoten: aman dijalankan berulang) |
+| `npm run db:reset` | Kosongkan semua tabel lalu seed ulang |
+| `npm run db:fresh` | Hapus skema, migrate dari nol, lalu seed |
+
+Seeder membuat data master (akun, kategori, merek, produk bertingkat satuan, supplier, mandor, cabang, aturan grosir, konten bantuan) dan data demo transaksi 24 hari terakhir (pembelian, penjualan, mutasi stok, cicilan piutang, biaya) yang konsisten: stok = jumlah mutasi, piutang = saldo awal + nota − cicilan.
+
+### 3. Frontend
 ```bash
-# Masuk ke folder client
 cd client
-
-# Install dependensi (jika belum)
 npm install
-
-# Jalankan aplikasi web kasir (port 3000)
-npm run dev
+npm run dev                # http://localhost:3000 (proxy /api -> :5000)
 ```
-Buka browser di: **`http://localhost:3000`**
+
+### 4. Docker penuh
+`docker compose up --build` → web, API (host `3500`) dan Postgres (host `1000`).
+
+### 5. Impor CSV
+Tombol *Import Excel* (Master Data → Produk dan Data Supplier) membaca file `.csv` (pemisah `,` atau `;`) dan menyimpan baris ke database lewat API.
+- Produk: `sku, nama, satuan, kategori, merek, stok_min, stok_awal, harga_beli, harga_jual, lokasi`
+- Supplier: `nama, kategori, kontak, telepon, email, alamat, termin`
+
+### 6. Kontrak API
+`docs/API_CONTRACT.md` (amplop respons, peran, semua endpoint + contoh respons nyata) dan `docs/openapi.yaml`.
 
 ---
 
+## 🧮 Aturan Hitungan Uang (server = sumber kebenaran)
+
+- Semua nominal dibulatkan ke Rupiah utuh (setengah ke atas). Urutan: `subtotal → diskon → PPN → total`.
+- **PPN** diatur di *Pengaturan → Preferensi Sistem* (hanya Bos/Admin). Bawaan: **tanpa PPN**. Jika aktif (11%), PPN dikenakan pada `subtotal − diskon`.
+- Total selalu `dibayar + kasbon`. Kelebihan hanya boleh dari **tunai** dan menjadi **kembalian**; transfer/QRIS/kartu harus pas.
+- Layar kasir mengirim `expectedTotal`; server menolak (409) jika berbeda dengan hitungannya sendiri.
+- Kunci `idempotencyKey` mencegah transaksi ganda saat tombol ditekan berulang / jaringan lambat.
+- Rumus identik ada di `server/src/utils/money.js` dan `client/src/utils/calc.js`; test `money_parity` menjaga keduanya tetap sama.
+- Harga grosir bertingkat dihitung server saat checkout; keranjang menghitung dengan fungsi yang sama dan kasir dapat mematikannya (`useWholesale:false`).
+
+## 🖨️ Cetak
+
+Struk thermal **80mm** dan Faktur Surat Jalan **A5** dibuat dari data transaksi server dan Pengaturan Nota (logo, header, footer).
+Gunakan *Cetak / Simpan PDF*; ukuran kertas diatur otomatis dan header/footer browser tidak ikut tercetak.
+
 ## 🔑 Akun Default untuk Pengujian
 
-Aplikasi dilengkapi tombol **1-Click Quick Demo Login** di halaman masuk:
+Akun berikut dibuat oleh seeder (ganti sandinya lewat *Pengaturan → Keamanan* sebelum dipakai sungguhan):
 
 | Peran | Username | Password | Deskripsi Akses |
 | :--- | :--- | :--- | :--- |
@@ -103,84 +127,9 @@ Aplikasi dilengkapi tombol **1-Click Quick Demo Login** di halaman masuk:
 
 ## 🧪 Menjalankan Automated Tests (Jest & Supertest)
 
-Backend dilengkapi test suite otomatis untuk memverifikasi keakuratan potongan stok satuan dasar, pencegahan stok minus, validasi batas plafon kasbon, dan autentikasi JWT:
+Backend dilengkapi test suite otomatis (hitungan uang, stok multi-satuan, pembelian/HPP, grosir, laporan, hak akses, kontrak endpoint):
 
 ```bash
 cd server
 npm test
 ```
-
-Hasil test:
-```text
-PASS __tests__/pos_checkout.test.js
-  POS Checkout & Konversi Multi-Satuan Test
-    √ Harus berhasil mengambil katalog produk dengan informasi satuan bertingkat
-    √ Harus memotong stok satuan dasar (Base Unit) secara tepat saat kasir menjual satuan tingkat atas (Sak)
-    √ Harus menolak transaksi jika kuantitas barang melebihi sisa stok riil
-    √ Harus menolak transaksi Kasbon jika melebihi plafon batas kredit mandor
-    √ Harus sukses mencatat pembayaran cicilan kasbon dan mengurangi saldo hutang mandor
-
-PASS __tests__/auth.test.js
-  Auth Endpoints (Otentikasi Pengguna POS)
-    √ Harus sukses login dengan kredensial yang benar
-    √ Harus menolak login dengan password yang salah
-    √ Harus mengembalikan data profil pengguna saat menyertakan token JWT valid
-    √ Harus menolak akses /me jika tidak menyertakan token
-
-Test Suites: 2 passed, 2 total
-Tests:       9 passed, 9 total
-```
-
-## Swagger dan validasi API
-
-Gunakan Node.js 24 dan PostgreSQL. Salin `server/.env.example` menjadi `server/.env`, lalu sesuaikan kredensial database dan `JWT_SECRET`.
-
-```bash
-npm ci --prefix server
-npm ci --prefix client
-npm --prefix server start
-npm --prefix client run dev
-```
-
-Swagger UI: http://localhost:5000/api-docs/
-
-OpenAPI JSON: http://localhost:5000/api-docs.json (`server/src/openapi.json`). Dokumentasi mencakup 40 operasi API kanonis; `/api` merupakan alias `/api/v1`. Login melalui `POST /auth/login`, salin `data.token`, lalu klik **Authorize** dan masukkan token JWT. Seluruh data bisnis membutuhkan login. Pendaftaran/manajemen pengguna, perubahan pengaturan, dan laporan ringkasan membutuhkan admin.
-
-### Pengujian otomatis
-
-**Penting:** suite API dan browser menghapus serta membuat ulang tabel pada database pengujian. Gunakan database kosong terpisah dengan nama mengandung `test`; jangan gunakan database aplikasi. Variabel `DB_NAME_TEST` default `stokmaterial_test_db`; koneksi cloud `DATABASE_URL` tidak dipakai oleh mode test.
-
-```bash
-npm --prefix server test
-npm --prefix client run lint
-npm --prefix client run build
-```
-
-Browser smoke test memerlukan `NODE_ENV=test`, database pengujian yang sama, Chromium Playwright, dan port 3000/5000 kosong. Script otomatis menjalankan API dan Vite, mengisi fixture, login, membuka halaman utama, mencoba tab laporan, dan memverifikasi sesi kedaluwarsa.
-
-```bash
-# macOS/Linux
-NODE_ENV=test npm --prefix client run test:e2e
-```
-
-```powershell
-# Windows PowerShell
-$env:NODE_ENV='test'
-npm --prefix client run test:e2e
-Remove-Item Env:NODE_ENV
-```
-
-Instal browser sekali dengan `npx --prefix client playwright install chromium`. Workflow `.github/workflows/validation.yml` menjalankan API tests, build/lint, dan browser smoke test dengan PostgreSQL 17.
-
-### Kontrak transaksi dan batas fitur
-
-- `discount` adalah potongan **rupiah** di POS, checkout, API, dan struk. API juga menerima `discountPercent` (0–100; diprioritaskan bila positif). Tidak ada penambahan pajak otomatis: backend belum memiliki pencatatan pajak.
-- Pembayaran yang didukung: `CASH`, `TRANSFER`, `QRIS`, `DEBT` (`KASBON` adalah alias). Jumlah semua pembayaran harus sama dengan total nota. Kembalian tunai hanya informasi UI; jangan masukkan uang lebih sebagai nominal pembayaran nota.
-- Stok diperiksa kumulatif untuk semua baris produk, dikunci dalam transaksi, dan tidak boleh negatif. Mutasi antar lokasi hanya catatan perpindahan; saldo stok per gudang belum tersedia.
-- Pembayaran piutang memperbarui saldo pelanggan dan nota terkait (FIFO jika tanpa `transactionId`). Saldo piutang awal tanpa nota tetap dapat dibayar sebagai saldo pelanggan.
-- Akun dan perubahan password pada Pengaturan menggunakan tabel pengguna sebenarnya. JSON `settings.usersList` lama tidak lagi menjadi sumber akun login. Pengguna dengan transaksi historis mungkin tidak dapat dihapus karena relasi database.
-- Laporan menampilkan data API, termasuk nilai nol. Daftar penjualan dibatasi 1.000 transaksi terbaru; ringkasan mencakup seluruh periode. Nilai stok memakai harga beli satuan dasar saat ini, bukan HPP historis.
-- Pembelian, biaya operasional, laba rugi lengkap, dan saldo kas per rekening belum memiliki backend. Angka contoh untuk fitur tersebut telah dihapus dari laporan. Ekspor pada Pengaturan hanya konfigurasi JSON, bukan backup database.
-- Untuk frontend dan API yang di-host terpisah, set `VITE_API_URL` saat build. Untuk origin yang sama, reverse proxy `/api` ke backend dan arahkan route SPA ke `index.html`.
-
-Hasil audit, bukti pengujian, dan fitur yang masih belum lengkap: [docs/API_AUDIT.md](docs/API_AUDIT.md). Ringkasan PO/surat jalan/opname dan referensi merek/grosir belum menjadi data backend persisten; tampilan sekarang memberi penjelasan agar tidak dianggap sebagai fitur produksi lengkap.

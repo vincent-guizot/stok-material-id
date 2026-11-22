@@ -1,16 +1,13 @@
-# React + Vite
+# StokMaterial.id — Client
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite + Tailwind. Semua data diambil langsung dari API (TanStack Query); tidak ada data dummy/hardcode.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev      # http://localhost:3000, /api diproxy ke http://127.0.0.1:5000
+npm run build    # hasil di dist/
+npm run lint
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Struktur: `src/pages` (halaman & sub-tab), `src/components` (shell, UI umum), `src/store` (Zustand: auth, keranjang), `src/services` (Axios), `src/utils/calc.js` (rumus uang, identik dengan server).
+Kontrak API: `../docs/API_CONTRACT.md`.

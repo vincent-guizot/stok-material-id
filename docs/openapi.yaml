@@ -1,0 +1,705 @@
+openapi: 3.0.3
+info:
+  title: StokMaterial.id API
+  version: 1.0.0
+  description: Lihat API_CONTRACT.md untuk contoh respons lengkap.
+servers:
+  - url: http://localhost:5000/api/v1
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    Envelope:
+      type: object
+      required: [success]
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        data: {}
+        meta: { type: object }
+paths:
+  /auth/login:
+    post:
+      summary: "Login; mengembalikan JWT"
+      description: "Akses: publik. body: username*, password*"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /auth/register:
+    post:
+      summary: "Buat akun (juga lewat /users)"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: name*, username*, password*(min 6), role(admin|cashier|warehouse)"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /auth/me:
+    get:
+      summary: "Profil pengguna aktif"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /auth/password:
+    put:
+      summary: "Ganti kata sandi sendiri"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: currentPassword*, newPassword*(min 6, ≠ lama)"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /settings:
+    get:
+      summary: "Pengaturan toko (nama, pajak, struk, allowMinusStock, logoUrl, dst.)"
+      description: "Akses: publik."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    put:
+      summary: "Ubah pengaturan (POST setara)"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: field pengaturan; perubahan pajak ditolak bila sudah ada transaksi (guardTaxChange)"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /categories:
+    get:
+      summary: "Daftar kategori"
+      description: "Akses: publik."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Tambah kategori"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: name*, icon"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /brands:
+    get:
+      summary: "Daftar merek"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Tambah merek"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: name*"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/brands/{id}":
+    put:
+      summary: "Ubah merek"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin. body: name"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    delete:
+      summary: "Hapus merek"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /products:
+    get:
+      summary: "Daftar produk + satuan + tier grosir + stok"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). query: search, categoryId, activeOnly"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Tambah produk"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: sku*, name*, categoryId, brandId, baseUnit*, minStock, initialStock, location, units[]*"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/products/{id}":
+    get:
+      summary: "Detail produk"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    put:
+      summary: "Ubah produk"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin. body: seperti POST + buyPrice, sellPrice, currentStockBase"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    delete:
+      summary: "Hapus/nonaktifkan produk"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /customers:
+    get:
+      summary: "Daftar mandor/pelanggan + sisa hutang"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Tambah pelanggan"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: name*, phone, address, creditLimit, termDays"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/customers/{id}":
+    get:
+      summary: "Detail pelanggan"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    put:
+      summary: "Ubah pelanggan"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: semua peran (login). body: sama seperti POST"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    delete:
+      summary: "Hapus pelanggan"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /suppliers:
+    get:
+      summary: "Daftar supplier + purchaseCount/purchaseTotal/unpaidTotal/lastPurchaseDate"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Tambah supplier (kode otomatis bila kosong)"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: name*, code, category, contactPerson, phone, email, address, paymentTerms, status"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/suppliers/{id}":
+    get:
+      summary: "Detail supplier"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    put:
+      summary: "Ubah supplier"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin. body: sama seperti POST"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    delete:
+      summary: "Hapus supplier"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /transactions:
+    post:
+      summary: "Checkout kasir (alias /transactions/checkout)"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: items[{productId,unitId,qty}]*, customerId, discount, discountPercent, paymentMethod(default CASH), payments[], dueDate, notes, expectedTotal, idempotencyKey, useWholesale(default true; false = harga normal)"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    get:
+      summary: "Daftar transaksi"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). query: limit, status, customerId"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/transactions/{id}":
+    get:
+      summary: "Detail nota + item"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /debts/pay:
+    post:
+      summary: "Bayar piutang mandor"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: customerId*, amount*, paymentMethod, transactionId, notes"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /debts/history:
+    get:
+      summary: "Riwayat pembayaran piutang"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). query: customerId"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /debts/summary:
+    get:
+      summary: "Ringkasan piutang per mandor"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /stocks/in:
+    post:
+      summary: "Barang masuk manual"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: productId*, unitId*, qty*, notes"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /stocks/out:
+    post:
+      summary: "Barang keluar"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: productId*, unitId*, qty*, destination, receiver, driver, notes"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /stocks/transfer:
+    post:
+      summary: "Mutasi lokasi"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: productId*, unitId*, qty*, fromLocation, toLocation, notes"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /stocks/adjust:
+    post:
+      summary: "Penyesuaian stok"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: productId*, actualBaseQty*, reason*"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /stocks/opname:
+    post:
+      summary: "Opname stok"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: items[{productId,actualBaseQty}]*, notes"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /stocks/movements:
+    get:
+      summary: "Riwayat mutasi stok"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). query: productId, type, from, to"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /purchases:
+    get:
+      summary: "Daftar pembelian (PO)"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). query: supplierId, from, to, paymentStatus"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Terima barang dari supplier; menambah stok & memperbarui HPP"
+      security: [{ bearer: [] }]
+      description: "Akses: admin, warehouse. body: supplierId*, items[{productId,unitId,qty,unitCost}]*, paid(default true; false = hutang, jatuh tempo mengikuti termin supplier), purchaseDate, notes"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/purchases/{id}":
+    get:
+      summary: "Detail PO"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/purchases/{id}/pay":
+    post:
+      summary: "Lunasi PO (409 bila sudah lunas)"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /expenses:
+    get:
+      summary: "Daftar biaya operasional"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). query: from, to, category"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Catat biaya"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login). body: category*, amount*, date, description, paymentMethod(default CASH)"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/expenses/{id}":
+    delete:
+      summary: "Hapus biaya"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /wholesale:
+    get:
+      summary: "Aturan harga grosir"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Buat aturan grosir"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: unitId*, minQty*(>0), price*(< harga normal), label, target(semua/mandor), isActive"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/wholesale/{id}":
+    put:
+      summary: "Ubah aturan"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin. body: sama seperti POST"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    delete:
+      summary: "Hapus aturan"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /branches:
+    get:
+      summary: "Daftar cabang"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Tambah cabang"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: name*, address, type, status"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/branches/{id}":
+    put:
+      summary: "Ubah cabang"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin. body: sama seperti POST"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    delete:
+      summary: "Hapus cabang"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /users:
+    get:
+      summary: "Daftar pengguna (tanpa hash sandi)"
+      security: [{ bearer: [] }]
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Buat pengguna"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. body: name*, username*, password*, role"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  "/users/{id}":
+    put:
+      summary: "Ubah pengguna"
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      description: "Akses: admin. body: name, role, isActive, password"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /help:
+    get:
+      summary: "Konten Pusat Bantuan dikelompokkan per jenis (guide, video, faq, contact, shortcut, about)"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /notifications:
+    get:
+      summary: "Notifikasi terhitung otomatis (stok menipis, piutang jatuh tempo, PO jatuh tempo, pembelian baru)"
+      security: [{ bearer: [] }]
+      description: "Akses: semua peran (login)."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /backup:
+    get:
+      summary: "Log backup"
+      security: [{ bearer: [] }]
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+    post:
+      summary: "Ekspor backup JSON (tanpa hash sandi) + catat log"
+      security: [{ bearer: [] }]
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /reports/summary:
+    get:
+      summary: "Ringkasan dasbor"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. query: from, to"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /reports/overview:
+    get:
+      summary: "Ringkasan laporan (total, harian, metode, kategori, top produk, piutang)"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. query: from, to"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /reports/purchases:
+    get:
+      summary: "Laporan pembelian"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. query: from, to"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /reports/profit-loss:
+    get:
+      summary: "Laba rugi (penjualan bersih tanpa PPN, HPP dari unitCost, biaya)"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. query: from, to"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /reports/cash-flow:
+    get:
+      summary: "Arus kas"
+      security: [{ bearer: [] }]
+      description: "Akses: admin. query: from, to"
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
+  /reports/stock:
+    get:
+      summary: "Laporan stok & nilai persediaan"
+      security: [{ bearer: [] }]
+      description: "Akses: admin."
+      responses:
+        "200": { description: Sukses, content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } } }
+        "400": { description: Validasi gagal }
+        "401": { description: Tidak terautentikasi }
+        "403": { description: Peran tidak diizinkan }
