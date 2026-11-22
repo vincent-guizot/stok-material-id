@@ -1,5 +1,3 @@
-import { motion, useReducedMotion } from 'framer-motion';
-import { motionTransition } from './motion/presets.js';
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
@@ -14,17 +12,10 @@ export default function StatCard({
   className = '',
   onClick,
 }) {
-  const reduceMotion = useReducedMotion();
-  const Surface = onClick ? motion.button : motion.div;
   return (
-    <Surface
-      type={onClick ? 'button' : undefined}
-      initial={false}
-      whileHover={reduceMotion || !onClick ? undefined : { y: -2 }}
-      whileTap={reduceMotion || !onClick ? undefined : { scale: 0.99 }}
-      transition={motionTransition}
+    <div
       onClick={onClick}
-      className={`bg-white rounded-card border border-[#DEDCCF] p-3.5 sm:p-4 flex items-center justify-between gap-2.5 shadow-card text-left transition-colors w-full min-w-0 overflow-hidden ${
+      className={`relative bg-white rounded-card border border-[#DEDCCF] p-3.5 sm:p-4 flex items-center justify-between gap-2.5 shadow-card transition-all w-full min-w-0 overflow-hidden ${
         onClick ? 'cursor-pointer hover:border-[#234536] hover:shadow-card-hover' : ''
       } ${className}`}
     >
@@ -39,7 +30,7 @@ export default function StatCard({
             {title}
           </div>
           <div
-            className="text-base sm:text-lg lg:text-base xl:text-xl font-extrabold text-[#252922] tracking-tight mt-0.5 truncate"
+            className="text-lg xl:text-[22px] font-extrabold text-[#252922] tracking-tight mt-0.5 whitespace-nowrap"
             title={typeof value === 'string' ? value : undefined}
           >
             {value}
@@ -54,7 +45,7 @@ export default function StatCard({
 
       {trend && (
         <div
-          className={`shrink-0 flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold ${
+          className={`absolute top-3 right-3 flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold ${
             trendType === 'up'
               ? 'bg-emerald-50 text-[#16845B]'
               : trendType === 'down'
@@ -67,6 +58,6 @@ export default function StatCard({
           <span className="truncate">{trend}</span>
         </div>
       )}
-    </Surface>
+    </div>
   );
 }

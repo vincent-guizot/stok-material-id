@@ -1,6 +1,4 @@
-import { motion } from 'framer-motion';
-import { fade, motionTransition } from './motion/presets.js';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import TopHeader from './TopHeader.jsx';
@@ -16,11 +14,9 @@ export default function AppShell({
   globalSearch,
   setGlobalSearch,
 }) {
-  const { user, logout, quickDemoLogin } = useAuthStore();
-  const { items } = useCartStore();
-  const [isWholesale, setIsWholesale] = useState(false);
+  const { user, logout } = useAuthStore();
+  const { items, wholesaleOn: isWholesale, setWholesaleOn: setIsWholesale } = useCartStore();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const closeMobileSidebar = useCallback(() => setIsMobileSidebarOpen(false), []);
   const [localSearch, setLocalSearch] = useState('');
 
   const location = useLocation();
@@ -119,49 +115,37 @@ export default function AppShell({
   };
 
   return (
-    <div className="flex h-screen bg-[#F7F4ED] overflow-hidden">
-      {/* Left Sidebar (Desktop persistent + Mobile slide-over) */}
-      <Sidebar
+    <div className="flex flex-col h-screen bg-[#F7F4ED] overflow-hidden">
+      {/* Header penuh: logo + pencarian + aksi */}
+      <TopHeader
         activeTab={currentTab}
-        setActiveTab={setActiveTab}
-        subTab={subTab}
-        setSubTab={setSubTab}
         user={user}
-        cartCount={items.length}
-        isOpen={isMobileSidebarOpen}
-        onClose={closeMobileSidebar}
+        logout={logout}
+        isWholesale={isWholesale}
+        setIsWholesale={setIsWholesale}
+        onOpenBarcodeScanner={handleOpenBarcodeScanner}
+        globalSearch={effectiveSearch}
+        setGlobalSearch={handleSearchChange}
+        onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
       />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Top Header */}
-        <TopHeader
+      <div className="flex flex-1 min-h-0">
+        <Sidebar
           activeTab={currentTab}
+          setActiveTab={setActiveTab}
+          subTab={subTab}
+          setSubTab={setSubTab}
           user={user}
-          logout={logout}
-          quickDemoLogin={quickDemoLogin}
-          isWholesale={isWholesale}
-          setIsWholesale={setIsWholesale}
-          onOpenBarcodeScanner={handleOpenBarcodeScanner}
-          globalSearch={effectiveSearch}
-          setGlobalSearch={handleSearchChange}
-          onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
+          cartCount={items.length}
+          isOpen={isMobileSidebarOpen}
+          onClose={() => setIsMobileSidebarOpen(false)}
         />
 
-        {/* Dynamic Page Content */}
         <main
           className={`flex-1 min-w-0 w-full ${
             currentTab === 'pos' ? 'overflow-hidden' : 'overflow-y-auto'
           }`}
         >
-          <motion.div
-            key={location.pathname}
-            className="h-full min-w-0"
-            initial="hidden"
-            animate="visible"
-            variants={fade}
-            transition={motionTransition}
-          >
           {children || (
             <Outlet
               context={{
@@ -172,7 +156,6 @@ export default function AppShell({
               }}
             />
           )}
-          </motion.div>
         </main>
       </div>
     </div>

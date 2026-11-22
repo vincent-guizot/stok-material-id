@@ -45,43 +45,30 @@
   background: #C6A46A;
 }
 
-/* Print styling for POS Thermal Receipt (80mm) and A5 Invoice */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  #printable-receipt, #printable-receipt * {
-    visibility: visible;
-  }
-  #printable-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    background: white;
-    color: black;
-  }
-  @page {
-    margin: 4mm;
+/* Cetak struk thermal (80mm) & faktur A5.
+   Konten cetak dirender ke #print-root (portal langsung di bawah <body>).
+   Ukuran kertas (@page size, margin 0 agar header/footer browser hilang) disuntik
+   oleh PrintReceiptModal saat tombol Cetak ditekan. Aturan hanya aktif jika
+   <body> memiliki kelas .printing-receipt, sehingga cetak halaman lain tidak terganggu. */
+@media screen {
+  #print-root {
+    display: none;
   }
 }
 
-/* Keep controls clear and predictable for keyboard and touch users. */
-@layer base {
-  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
-  :where(button, a, input, select, textarea):focus-visible {
-    outline: 2px solid var(--brand-forest);
-    outline-offset: 3px;
+@media print {
+  body.printing-receipt {
+    background: #fff !important;
+    margin: 0 !important;
   }
-  button:disabled { cursor: not-allowed; }
-}
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  body.printing-receipt > *:not(#print-root) {
+    display: none !important;
+  }
+  body.printing-receipt #print-root {
+    display: block !important;
+  }
+  body.printing-receipt #print-root * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
