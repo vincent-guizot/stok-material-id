@@ -12,7 +12,7 @@ const StockMovement = sequelize.define('StockMovement', {
     allowNull: false,
   },
   type: {
-    type: DataTypes.ENUM('SALE', 'IN', 'ADJUSTMENT', 'RETURN'),
+    type: DataTypes.ENUM('SALE', 'IN', 'ADJUSTMENT', 'RETURN', 'OUT', 'TRANSFER', 'OPNAME'),
     allowNull: false,
   },
   qtyBaseUnit: {
@@ -32,6 +32,15 @@ const StockMovement = sequelize.define('StockMovement', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  refNo: { type: DataTypes.STRING, allowNull: true, comment: 'Nomor dokumen (DO-/MUT-/PO-)' },
+  fromLocation: { type: DataTypes.STRING, allowNull: true },
+  toLocation: { type: DataTypes.STRING, allowNull: true },
+  destination: { type: DataTypes.STRING, allowNull: true },
+  receiver: { type: DataTypes.STRING, allowNull: true },
+  driver: { type: DataTypes.STRING, allowNull: true },
+  reason: { type: DataTypes.STRING, allowNull: true },
+  unitName: { type: DataTypes.STRING, allowNull: true, comment: 'Satuan yang diinput pengguna' },
+  qtyInput: { type: DataTypes.FLOAT, allowNull: true, comment: 'Jumlah dalam satuan input' },
   createdBy: {
     type: DataTypes.UUID,
     allowNull: true,

@@ -12,7 +12,7 @@ const TransactionPayment = sequelize.define('TransactionPayment', {
     allowNull: false,
   },
   paymentMethod: {
-    type: DataTypes.ENUM('CASH', 'TRANSFER', 'QRIS', 'DEBT'),
+    type: DataTypes.ENUM('CASH', 'TRANSFER', 'QRIS', 'CARD', 'DEBT'),
     allowNull: false,
   },
   amount: {

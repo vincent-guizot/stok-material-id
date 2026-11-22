@@ -25,6 +25,11 @@ const User = sequelize.define('User', {
     defaultValue: 'cashier',
     allowNull: false,
   },
+  isActive: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true,
+  },
 }, {
   tableName: 'users',
   timestamps: true,

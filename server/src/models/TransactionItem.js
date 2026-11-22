@@ -47,6 +47,12 @@ const TransactionItem = sequelize.define('TransactionItem', {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,
   },
+  unitCost: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'HPP per satuan jual saat transaksi (harga modal)',
+  },
   subtotal: {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,

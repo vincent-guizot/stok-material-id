@@ -20,6 +20,15 @@ const Product = sequelize.define('Product', {
     type: DataTypes.UUID,
     allowNull: true,
   },
+  brandId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+  location: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Lokasi rak / gudang',
+  },
   baseUnit: {
     type: DataTypes.STRING,
     allowNull: false,

@@ -59,6 +59,12 @@ const Setting = sequelize.define('Setting', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  taxRate: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Persen PPN untuk penjualan (0 = tidak memakai PPN, 11 = PPN 11%)',
+  },
   lowStockAlert: {
     type: DataTypes.STRING,
     defaultValue: '50',

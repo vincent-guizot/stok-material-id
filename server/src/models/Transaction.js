@@ -34,10 +34,41 @@ const Transaction = sequelize.define('Transaction', {
     type: DataTypes.DECIMAL(12, 2),
     defaultValue: 0,
   },
+  taxRate: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Persen PPN yang berlaku saat transaksi (0 = tanpa PPN)',
+  },
+  taxAmount: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Nominal PPN = (subtotal - diskon) x taxRate, dibulatkan ke Rupiah',
+  },
   totalAmount: {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,
     defaultValue: 0,
+    comment: 'subtotal - diskon + PPN. Selalu = paidAmount + debtAmount',
+  },
+  cashReceived: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Uang tunai yang diserahkan pelanggan (sebelum kembalian)',
+  },
+  changeAmount: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Kembalian = tunai diterima - bagian tunai yang terpakai',
+  },
+  idempotencyKey: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    unique: true,
+    comment: 'Kunci anti-submit ganda dari klien',
   },
   paidAmount: {
     type: DataTypes.DECIMAL(12, 2),
