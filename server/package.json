@@ -7,8 +7,13 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "seed": "node src/seeders/initialSeed.js",
-    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand --detectOpenHandles"
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --runInBand --detectOpenHandles --forceExit",
+    "db:migrate": "node src/database/cli.js migrate",
+    "db:rollback": "node src/database/cli.js rollback",
+    "db:status": "node src/database/cli.js status",
+    "db:seed": "node src/database/cli.js seed",
+    "db:reset": "node src/database/cli.js reset",
+    "db:fresh": "node src/database/cli.js fresh"
   },
   "keywords": [
     "pos",
@@ -30,7 +35,7 @@
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.5",
     "sqlite3": "^5.1.7",
-    "swagger-ui-express": "^5.0.1"
+    "umzug": "^3.8.3"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

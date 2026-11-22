@@ -5,9 +5,13 @@
   "scripts": {
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
-    "seed": "npm --prefix server run seed",
     "test:server": "npm --prefix server test",
-    "build:client": "npm --prefix client run build"
+    "build:client": "npm --prefix client run build",
+    "db:migrate": "npm --prefix server run db:migrate",
+    "db:seed": "npm --prefix server run db:seed",
+    "db:fresh": "npm --prefix server run db:fresh",
+    "db:reset": "npm --prefix server run db:reset",
+    "db:status": "npm --prefix server run db:status"
   },
   "keywords": [
     "pos",
